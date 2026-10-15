@@ -1,0 +1,2 @@
+Trigger/Name/A0000001=Instant Arena Code
+Trigger/Name/A0000002=Initialize Instant Arena

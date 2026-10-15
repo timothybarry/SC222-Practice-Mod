@@ -1,0 +1,1248 @@
+// Instant Arena v0.2.0 - favorites panel, 2v2 sides, loadouts, mixes and value matching.
+// The build script embeds this code into the map's editable Custom Script element.
+// Galaxy needs every local declared at the top of its function and every function
+// defined before it is called.
+
+const int ARENA_LIMIT = 200;
+const int ARENA_SIDES = 4;
+const int ARENA_ROWS = 3;
+const int ARENA_SLOTS = 3;
+const int ARENA_DEFAULT_BUDGET = 3000;
+const int ARENA_SCRATCH = 64;
+const string ARENA_BANK = "InstantArena";
+
+// Pending map-click actions, per player.
+const int ARENA_PENDING_NONE = 0;
+const int ARENA_PENDING_PLACE = 1;
+const int ARENA_PENDING_SPAWN_POINT = 2;
+
+// Favorite-row buttons. Count 0 means "equal value".
+const int ARENA_BUTTON_TEN = 1;
+const int ARENA_BUTTON_FIVE = 2;
+const int ARENA_BUTTON_ONE = 3;
+const int ARENA_BUTTON_EQUAL = 4;
+
+// Sides 1-2 are team 1 and sides 3-4 are team 2. Index 0 is unused.
+int[5] arenaSidePlayer;
+int[5] arenaSideTeam;
+string[5] arenaSideName;
+unitgroup[5] arenaArmy;
+point[5] arenaSpawn;
+point arenaCenter;
+bool[5] arenaSideUpgrades;
+
+playergroup arenaHumans;
+int arenaDialog;
+int arenaToolsDialog;
+int arenaTeamOneLabel;
+int arenaTeamTwoLabel;
+int arenaSideMenu;
+int[4] arenaRowMenu;
+int[4][5] arenaRowButton;
+int arenaClearButton;
+int arenaResetButton;
+int arenaToolsButton;
+int arenaSpeedSlider;
+int arenaSpeedLabel;
+int arenaSpeedIndex = -1;
+int[4] arenaMixButton;
+int arenaSlotMenu;
+int arenaSaveButton;
+int arenaDeployButton;
+int arenaSlotLabel;
+int arenaUpgradeButton;
+int arenaMoveSpawnButton;
+
+// Per-player state, indexed by player number.
+int[16] arenaPendingKind;
+string[16] arenaPendingType;
+int[16] arenaPendingCount;
+int[16] arenaPendingSide;
+fixed[16] arenaPendingTime;
+bool[16] arenaToolsOpen;
+string[16][4] arenaLoadout;
+string[16][4] arenaSavedRow;
+bank[16] arenaBank;
+
+// Scratch tally for army compositions.
+string[ARENA_SCRATCH] arenaTallyType;
+int[ARENA_SCRATCH] arenaTallyCount;
+int arenaTallySize;
+bool arenaStatusDirty;
+
+// ---------------------------------------------------------------- helpers
+
+int ArenaWordCount (string words) {
+    int count;
+    count = 0;
+    while (StringWord(words, count + 1) != "") {
+        count += 1;
+    }
+    return count;
+}
+
+bool ArenaIsHuman (int player) {
+    return PlayerGroupHasPlayer(arenaHumans, player);
+}
+
+bool ArenaSideIsAI (int side) {
+    return !ArenaIsHuman(arenaSidePlayer[side]);
+}
+
+int ArenaOtherTeam (int team) {
+    if (team == 1) { return 2; }
+    return 1;
+}
+
+void ArenaMessage (int player, text message) {
+    UIDisplayMessage(PlayerGroupSingle(player), c_messageAreaSubtitle, message);
+}
+
+int ArenaSelectedSide (int player) {
+    int side;
+    side = DialogControlGetSelectedItem(arenaSideMenu, player);
+    if (side < 1 || side > ARENA_SIDES) {
+        return 1;
+    }
+    return side;
+}
+
+// ---------------------------------------------------------------- roster
+
+// Standard multiplayer units in their normal mobile form, then buildings.
+// Row 1 lists Terran, row 2 Protoss, row 3 Zerg.
+string ArenaRosterUnits (int race) {
+    if (race == 1) {
+        return "Marine Marauder Reaper Ghost Hellion HellionTank WidowMine Cyclone SiegeTank Thor VikingFighter Medivac Liberator Banshee Raven Battlecruiser SCV";
+    }
+    if (race == 2) {
+        return "Zealot Stalker Sentry Adept HighTemplar DarkTemplar Archon Immortal Colossus Disruptor Observer WarpPrism Phoenix VoidRay Oracle Tempest Carrier Mothership Probe";
+    }
+    if (race == 3) {
+        return "Zergling Baneling Roach Ravager Hydralisk LurkerMP Infestor SwarmHostMP Ultralisk Queen Overlord Overseer Mutalisk Corruptor BroodLord Viper Drone";
+    }
+    return "";
+}
+
+string ArenaRosterBuildings (int race) {
+    if (race == 1) {
+        return "CommandCenter PlanetaryFortress SupplyDepot Barracks Factory Starport EngineeringBay Bunker MissileTurret SensorTower";
+    }
+    if (race == 2) {
+        return "Nexus Pylon Gateway CyberneticsCore Forge PhotonCannon ShieldBattery RoboticsFacility Stargate";
+    }
+    if (race == 3) {
+        return "Hatchery SpawningPool EvolutionChamber RoachWarren SpineCrawler SporeCrawler";
+    }
+    return "";
+}
+
+int ArenaRosterUnitCount (int race) {
+    return ArenaWordCount(ArenaRosterUnits(race));
+}
+
+int ArenaRosterCount (int race) {
+    return ArenaRosterUnitCount(race) + ArenaWordCount(ArenaRosterBuildings(race));
+}
+
+// Pulldown item indices start at 1. Invalid selections return "".
+string ArenaRosterType (int race, int index) {
+    int units;
+    units = ArenaRosterUnitCount(race);
+    if (index < 1) {
+        return "";
+    }
+    if (index <= units) {
+        return StringWord(ArenaRosterUnits(race), index);
+    }
+    return StringWord(ArenaRosterBuildings(race), index - units);
+}
+
+bool ArenaRosterIsBuilding (int race, int index) {
+    return index > ArenaRosterUnitCount(race) && index <= ArenaRosterCount(race);
+}
+
+int ArenaRosterIndex (int race, string unitType) {
+    int index;
+    index = 1;
+    while (index <= ArenaRosterCount(race)) {
+        if (ArenaRosterType(race, index) == unitType) {
+            return index;
+        }
+        index += 1;
+    }
+    return 1;
+}
+
+// Sieged, burrowed, lowered and flying forms count and respawn as their base unit.
+string ArenaBaseType (string unitType) {
+    if (unitType == "SiegeTankSieged") { return "SiegeTank"; }
+    if (unitType == "VikingAssault") { return "VikingFighter"; }
+    if (unitType == "WidowMineBurrowed") { return "WidowMine"; }
+    if (unitType == "LiberatorAG") { return "Liberator"; }
+    if (unitType == "ThorAP") { return "Thor"; }
+    if (unitType == "WarpPrismPhasing") { return "WarpPrism"; }
+    if (unitType == "ObserverSiegeMode") { return "Observer"; }
+    if (unitType == "OverseerSiegeMode") { return "Overseer"; }
+    if (unitType == "OverlordTransport") { return "Overlord"; }
+    if (unitType == "LurkerMPBurrowed") { return "LurkerMP"; }
+    if (unitType == "ZerglingBurrowed") { return "Zergling"; }
+    if (unitType == "BanelingBurrowed") { return "Baneling"; }
+    if (unitType == "RoachBurrowed") { return "Roach"; }
+    if (unitType == "RavagerBurrowed") { return "Ravager"; }
+    if (unitType == "HydraliskBurrowed") { return "Hydralisk"; }
+    if (unitType == "InfestorBurrowed") { return "Infestor"; }
+    if (unitType == "SwarmHostBurrowedMP") { return "SwarmHostMP"; }
+    if (unitType == "UltraliskBurrowed") { return "Ultralisk"; }
+    if (unitType == "QueenBurrowed") { return "Queen"; }
+    if (unitType == "DroneBurrowed") { return "Drone"; }
+    if (unitType == "SupplyDepotLowered") { return "SupplyDepot"; }
+    if (unitType == "CommandCenterFlying") { return "CommandCenter"; }
+    if (unitType == "BarracksFlying") { return "Barracks"; }
+    if (unitType == "FactoryFlying") { return "Factory"; }
+    if (unitType == "StarportFlying") { return "Starport"; }
+    if (unitType == "SpineCrawlerUprooted") { return "SpineCrawler"; }
+    if (unitType == "SporeCrawlerUprooted") { return "SporeCrawler"; }
+    return unitType;
+}
+
+int ArenaTypeValue (string unitType) {
+    return UnitTypeGetCost(ArenaBaseType(unitType), c_unitCostSumMineralsVespene);
+}
+
+// Every upgrade a multiplayer player can research, all levels.
+string ArenaUpgradeList () {
+    string list;
+    list = "AdeptPiercingAttack AnabolicSynthesis BansheeCloak BansheeSpeed BattlecruiserEnableSpecializations BlinkTech Burrow CentrificalHooks Charge ChitinousPlating CycloneLockOnDamageUpgrade DarkTemplarBlinkUpgrade DiggingClaws DrillClaws EvolveGroovedSpines EvolveMuscularAugments ExtendedThermalLance Frenzy GlialReconstitution GraviticDrive HighCapacityBarrels HiSecAutoTracking InterferenceMatrix LiberatorAGRangeUpgrade LurkerRange MedivacCaduceusReactor NeuralParasite ObserverGraviticBooster overlordspeed PersonalCloaking PhoenixRangeUpgrade PsiStormTech PunisherGrenades ShieldWall SmartServos Stimpack TempestGroundAttackUpgrade TerranBuildingArmor TunnelingClaws VoidRaySpeedUpgrade WarpGateResearch zerglingattackspeed zerglingmovementspeed ";
+    list = list + "ProtossAirArmorsLevel1 ProtossAirArmorsLevel2 ProtossAirArmorsLevel3 ProtossAirWeaponsLevel1 ProtossAirWeaponsLevel2 ProtossAirWeaponsLevel3 ProtossGroundArmorsLevel1 ProtossGroundArmorsLevel2 ProtossGroundArmorsLevel3 ProtossGroundWeaponsLevel1 ProtossGroundWeaponsLevel2 ProtossGroundWeaponsLevel3 ProtossShieldsLevel1 ProtossShieldsLevel2 ProtossShieldsLevel3 ";
+    list = list + "TerranInfantryArmorsLevel1 TerranInfantryArmorsLevel2 TerranInfantryArmorsLevel3 TerranInfantryWeaponsLevel1 TerranInfantryWeaponsLevel2 TerranInfantryWeaponsLevel3 TerranShipWeaponsLevel1 TerranShipWeaponsLevel2 TerranShipWeaponsLevel3 TerranVehicleAndShipArmorsLevel1 TerranVehicleAndShipArmorsLevel2 TerranVehicleAndShipArmorsLevel3 TerranVehicleWeaponsLevel1 TerranVehicleWeaponsLevel2 TerranVehicleWeaponsLevel3 ";
+    list = list + "ZergFlyerArmorsLevel1 ZergFlyerArmorsLevel2 ZergFlyerArmorsLevel3 ZergFlyerWeaponsLevel1 ZergFlyerWeaponsLevel2 ZergFlyerWeaponsLevel3 ZergGroundArmorsLevel1 ZergGroundArmorsLevel2 ZergGroundArmorsLevel3 ZergMeleeWeaponsLevel1 ZergMeleeWeaponsLevel2 ZergMeleeWeaponsLevel3 ZergMissileWeaponsLevel1 ZergMissileWeaponsLevel2 ZergMissileWeaponsLevel3";
+    return list;
+}
+
+// Realistic armies as "Type count" pairs, scaled to a budget when spawned.
+string ArenaMixName (int race, int variant) {
+    if (race == 1) {
+        if (variant == 1) { return "Terran bio"; }
+        if (variant == 2) { return "Terran mech"; }
+        return "Terran sky";
+    }
+    if (race == 2) {
+        if (variant == 1) { return "Protoss chargelot-immortal-archon"; }
+        if (variant == 2) { return "Protoss stalker-colossus"; }
+        return "Protoss skytoss";
+    }
+    if (variant == 1) { return "Zerg roach-ravager-hydra"; }
+    if (variant == 2) { return "Zerg ling-bane-muta"; }
+    return "Zerg ultra-ling-infestor";
+}
+
+string ArenaMix (int race, int variant) {
+    if (race == 1) {
+        if (variant == 1) { return "Marine 16 Marauder 6 Medivac 3 SiegeTank 2 WidowMine 2"; }
+        if (variant == 2) { return "HellionTank 8 SiegeTank 4 Thor 2 Cyclone 2 VikingFighter 2"; }
+        return "Battlecruiser 3 VikingFighter 4 Liberator 2 Raven 1";
+    }
+    if (race == 2) {
+        if (variant == 1) { return "Zealot 10 Immortal 3 Archon 3 HighTemplar 2 Stalker 4 Observer 1"; }
+        if (variant == 2) { return "Stalker 10 Colossus 3 Immortal 2 Sentry 2 Observer 1"; }
+        return "Carrier 4 VoidRay 4 Tempest 2 Archon 2";
+    }
+    if (variant == 1) { return "Roach 10 Ravager 3 Hydralisk 8 Overseer 1"; }
+    if (variant == 2) { return "Zergling 30 Baneling 10 Mutalisk 8"; }
+    return "Ultralisk 4 Zergling 30 Infestor 3 Queen 2";
+}
+
+int ArenaMixValue (string mix) {
+    int word;
+    int value;
+    value = 0;
+    word = 1;
+    while (StringWord(mix, word) != "") {
+        value += ArenaTypeValue(StringWord(mix, word)) * StringToInt(StringWord(mix, word + 1));
+        word += 2;
+    }
+    return value;
+}
+
+// ---------------------------------------------------------------- armies and values
+
+int ArenaSideAlive (int side) {
+    return UnitGroupCount(arenaArmy[side], c_unitCountAlive);
+}
+
+int ArenaSideValue (int side) {
+    int index;
+    int value;
+    unit member;
+    value = 0;
+    index = 1;
+    while (index <= UnitGroupCount(arenaArmy[side], c_unitCountAll)) {
+        member = UnitGroupUnit(arenaArmy[side], index);
+        if (UnitIsAlive(member)) {
+            value += ArenaTypeValue(UnitGetType(member));
+        }
+        index += 1;
+    }
+    return value;
+}
+
+int ArenaTeamValue (int team) {
+    int side;
+    int value;
+    value = 0;
+    side = 1;
+    while (side <= ARENA_SIDES) {
+        if (arenaSideTeam[side] == team) {
+            value += ArenaSideValue(side);
+        }
+        side += 1;
+    }
+    return value;
+}
+
+int ArenaOpposingValue (int side) {
+    return ArenaTeamValue(ArenaOtherTeam(arenaSideTeam[side]));
+}
+
+void ArenaRefreshStatus () {
+    string line;
+    line = "Team 1   " + arenaSideName[1] + " " + IntToString(ArenaSideAlive(1));
+    line = line + "   " + arenaSideName[2] + " " + IntToString(ArenaSideAlive(2));
+    line = line + "   value " + IntToString(ArenaTeamValue(1));
+    libNtve_gf_SetDialogItemText(arenaTeamOneLabel, StringToText(line), arenaHumans);
+    line = "Team 2   " + arenaSideName[3] + " " + IntToString(ArenaSideAlive(3));
+    line = line + "   " + arenaSideName[4] + " " + IntToString(ArenaSideAlive(4));
+    line = line + "   value " + IntToString(ArenaTeamValue(2));
+    libNtve_gf_SetDialogItemText(arenaTeamTwoLabel, StringToText(line), arenaHumans);
+}
+
+void ArenaClearGroup (unitgroup army) {
+    unit target;
+    while (UnitGroupCount(army, c_unitCountAll) > 0) {
+        target = UnitGroupUnit(army, 1);
+        UnitGroupRemove(army, target);
+        UnitRemove(target);
+    }
+}
+
+// The first living opposing unit, else the opposing team's main spawn.
+point ArenaEnemyTarget (int side) {
+    int other;
+    int index;
+    unit member;
+    other = 1;
+    while (other <= ARENA_SIDES) {
+        if (arenaSideTeam[other] != arenaSideTeam[side]) {
+            index = 1;
+            while (index <= UnitGroupCount(arenaArmy[other], c_unitCountAll)) {
+                member = UnitGroupUnit(arenaArmy[other], index);
+                if (UnitIsAlive(member)) {
+                    return UnitGetPosition(member);
+                }
+                index += 1;
+            }
+        }
+        other += 1;
+    }
+    if (arenaSideTeam[side] == 1) {
+        return arenaSpawn[3];
+    }
+    return arenaSpawn[1];
+}
+
+// A fighting unit on the same side that support units can follow.
+unit ArenaLeader (int side, unit follower) {
+    int index;
+    unit member;
+    index = 1;
+    while (index <= UnitGroupCount(arenaArmy[side], c_unitCountAll)) {
+        member = UnitGroupUnit(arenaArmy[side], index);
+        if (member != follower && UnitIsAlive(member) && UnitAbilityExists(member, "attack") && UnitAbilityExists(member, "move")) {
+            return member;
+        }
+        index += 1;
+    }
+    return null;
+}
+
+// Computer-run sides attack-move at the other team; support units follow a fighter.
+void ArenaCommand (int side, unit member) {
+    unit leader;
+    if (!ArenaSideIsAI(side) || !UnitAbilityExists(member, "move")) {
+        return;
+    }
+    if (UnitAbilityExists(member, "attack")) {
+        UnitIssueOrder(member, OrderTargetingPoint(AbilityCommand("attack", 0), ArenaEnemyTarget(side)), c_orderQueueReplace);
+        return;
+    }
+    leader = ArenaLeader(side, member);
+    if (leader != null) {
+        UnitIssueOrder(member, OrderTargetingUnit(AbilityCommand("move", 0), leader), c_orderQueueReplace);
+    }
+    else {
+        UnitIssueOrder(member, OrderTargetingPoint(AbilityCommand("move", 0), ArenaEnemyTarget(side)), c_orderQueueReplace);
+    }
+}
+
+// Creates units for a side. Returns how many were made.
+int ArenaSpawnAt (int player, int side, string unitType, int count, point where) {
+    unitgroup created;
+    unit spawned;
+    int room;
+    int index;
+    fixed facing;
+    if (unitType == "" || count < 1) {
+        return 0;
+    }
+    room = ARENA_LIMIT - ArenaSideAlive(side);
+    if (room <= 0) {
+        ArenaMessage(player, StringToText(arenaSideName[side] + " already has " + IntToString(ARENA_LIMIT) + " units. Clear or fight to make room."));
+        return 0;
+    }
+    if (count > room) {
+        ArenaMessage(player, StringToText("Only " + IntToString(room) + " fit under the " + IntToString(ARENA_LIMIT) + "-unit limit."));
+        count = room;
+    }
+    facing = 0.0;
+    if (arenaSideTeam[side] == 2) {
+        facing = 180.0;
+    }
+    // Normal placement lets SC2 find nearby space instead of stacking units.
+    created = UnitCreate(count, unitType, 0, arenaSidePlayer[side], where, facing);
+    index = 1;
+    while (index <= UnitGroupCount(created, c_unitCountAll)) {
+        spawned = UnitGroupUnit(created, index);
+        UnitGroupAdd(arenaArmy[side], spawned);
+        UnitSetPropertyFixed(spawned, c_unitPropEnergyPercent, 100.0);
+        ArenaCommand(side, spawned);
+        index += 1;
+    }
+    if (UnitGroupCount(created, c_unitCountAll) == 0) {
+        ArenaMessage(player, StringToText("No room here. Move units away or clear a side."));
+    }
+    return UnitGroupCount(created, c_unitCountAll);
+}
+
+// Spawns "Type count" pairs at a side's spawn point.
+void ArenaSpawnList (int player, int side, string list) {
+    int word;
+    word = 1;
+    while (StringWord(list, word) != "") {
+        ArenaSpawnAt(player, side, StringWord(list, word), StringToInt(StringWord(list, word + 1)), arenaSpawn[side]);
+        word += 2;
+    }
+}
+
+// ---------------------------------------------------------------- upgrades and resources
+
+void ArenaApplyUpgrades (int side) {
+    string list;
+    int word;
+    int level;
+    level = 0;
+    if (arenaSideUpgrades[side]) {
+        level = 1;
+    }
+    list = ArenaUpgradeList();
+    word = 1;
+    while (StringWord(list, word) != "") {
+        libNtve_gf_SetUpgradeLevelForPlayer(arenaSidePlayer[side], StringWord(list, word), level);
+        word += 1;
+    }
+}
+
+// Spending, gas and supply are ignored, so every player's bank is effectively infinite.
+void ArenaInfiniteResources (int player) {
+    PlayerSetState(player, c_playerStateMineralCostIgnored, true);
+    PlayerSetState(player, c_playerStateVespeneCostIgnored, true);
+    PlayerSetState(player, c_playerStateFoodIgnored, true);
+    PlayerModifyPropertyInt(player, c_playerPropMinerals, c_playerPropOperSetTo, 99999);
+    PlayerModifyPropertyInt(player, c_playerPropVespene, c_playerPropOperSetTo, 99999);
+}
+
+void ArenaRefreshSideControls (int player) {
+    int side;
+    side = ArenaSelectedSide(player);
+    if (arenaSideUpgrades[side]) {
+        libNtve_gf_SetDialogItemText(arenaUpgradeButton, StringToText("Max upgrades: ON"), PlayerGroupSingle(player));
+    }
+    else {
+        libNtve_gf_SetDialogItemText(arenaUpgradeButton, StringToText("Max upgrades: OFF"), PlayerGroupSingle(player));
+    }
+}
+
+// ---------------------------------------------------------------- loadouts and favorites
+
+// Counts living units on a side by base type into the scratch tally.
+void ArenaTally (int side) {
+    int index;
+    int slot;
+    unit member;
+    string unitType;
+    arenaTallySize = 0;
+    index = 1;
+    while (index <= UnitGroupCount(arenaArmy[side], c_unitCountAll)) {
+        member = UnitGroupUnit(arenaArmy[side], index);
+        if (UnitIsAlive(member)) {
+            unitType = ArenaBaseType(UnitGetType(member));
+            slot = 0;
+            while (slot < arenaTallySize) {
+                if (arenaTallyType[slot] == unitType) {
+                    break;
+                }
+                slot += 1;
+            }
+            if (slot == arenaTallySize && arenaTallySize < ARENA_SCRATCH) {
+                arenaTallyType[slot] = unitType;
+                arenaTallyCount[slot] = 0;
+                arenaTallySize += 1;
+            }
+            if (slot < arenaTallySize) {
+                arenaTallyCount[slot] += 1;
+            }
+        }
+        index += 1;
+    }
+}
+
+text ArenaListText (string list) {
+    text result;
+    int word;
+    if (list == "") {
+        return StringToText("empty");
+    }
+    result = StringToText("");
+    word = 1;
+    while (StringWord(list, word) != "") {
+        if (word > 1) {
+            result = result + StringToText(", ");
+        }
+        result = result + StringToText(StringWord(list, word + 1) + " ") + UnitTypeGetName(StringWord(list, word));
+        word += 2;
+    }
+    return result;
+}
+
+int ArenaSelectedSlot (int player) {
+    int slot;
+    slot = DialogControlGetSelectedItem(arenaSlotMenu, player);
+    if (slot < 1 || slot > ARENA_SLOTS) {
+        return 1;
+    }
+    return slot;
+}
+
+void ArenaRefreshSlot (int player) {
+    int slot;
+    slot = ArenaSelectedSlot(player);
+    libNtve_gf_SetDialogItemText(arenaSlotLabel, ArenaListText(arenaLoadout[player][slot]), PlayerGroupSingle(player));
+}
+
+// Each save writes one key. SC2 reports the menu selections made during setup as
+// changes a moment later, so a row is saved only when its unit really changed.
+void ArenaBankSaveRow (int player, int row) {
+    string unitType;
+    unitType = ArenaRosterType(row, DialogControlGetSelectedItem(arenaRowMenu[row], player));
+    if (!ArenaIsHuman(player) || unitType == "" || unitType == arenaSavedRow[player][row]) {
+        return;
+    }
+    arenaSavedRow[player][row] = unitType;
+    BankValueSetFromString(arenaBank[player], "favorites", "row" + IntToString(row), unitType);
+    BankSave(arenaBank[player]);
+}
+
+void ArenaBankSaveSlot (int player, int slot) {
+    if (!ArenaIsHuman(player)) {
+        return;
+    }
+    BankValueSetFromString(arenaBank[player], "loadouts", "slot" + IntToString(slot), arenaLoadout[player][slot]);
+    BankSave(arenaBank[player]);
+}
+
+// Favorites are stored by unit name, so roster changes never shift a saved choice.
+void ArenaBankLoad (int player) {
+    int row;
+    int slot;
+    string key;
+    arenaBank[player] = BankLoad(ARENA_BANK, player);
+    row = 1;
+    while (row <= ARENA_ROWS) {
+        key = "row" + IntToString(row);
+        if (BankKeyExists(arenaBank[player], "favorites", key)) {
+            DialogControlSelectItem(arenaRowMenu[row], PlayerGroupSingle(player),
+                ArenaRosterIndex(row, BankValueGetAsString(arenaBank[player], "favorites", key)));
+        }
+        arenaSavedRow[player][row] = ArenaRosterType(row, DialogControlGetSelectedItem(arenaRowMenu[row], player));
+        row += 1;
+    }
+    slot = 1;
+    while (slot <= ARENA_SLOTS) {
+        key = "slot" + IntToString(slot);
+        if (BankKeyExists(arenaBank[player], "loadouts", key)) {
+            arenaLoadout[player][slot] = BankValueGetAsString(arenaBank[player], "loadouts", key);
+        }
+        slot += 1;
+    }
+}
+
+void ArenaSaveLoadout (int player) {
+    int side;
+    int slot;
+    int index;
+    string list;
+    side = ArenaSelectedSide(player);
+    slot = ArenaSelectedSlot(player);
+    ArenaTally(side);
+    if (arenaTallySize == 0) {
+        ArenaMessage(player, StringToText(arenaSideName[side] + " has no units to save."));
+        return;
+    }
+    list = "";
+    index = 0;
+    while (index < arenaTallySize) {
+        if (index > 0) {
+            list = list + " ";
+        }
+        list = list + arenaTallyType[index] + " " + IntToString(arenaTallyCount[index]);
+        index += 1;
+    }
+    arenaLoadout[player][slot] = list;
+    ArenaBankSaveSlot(player, slot);
+    ArenaRefreshSlot(player);
+    ArenaMessage(player, StringToText("Saved " + arenaSideName[side] + "'s army to loadout " + IntToString(slot) + "."));
+}
+
+void ArenaDeployLoadout (int player) {
+    int side;
+    int slot;
+    side = ArenaSelectedSide(player);
+    slot = ArenaSelectedSlot(player);
+    if (arenaLoadout[player][slot] == "") {
+        ArenaMessage(player, StringToText("Loadout " + IntToString(slot) + " is empty. Build an army, then Save."));
+        return;
+    }
+    ArenaSpawnList(player, side, arenaLoadout[player][slot]);
+    ArenaRefreshStatus();
+}
+
+// ---------------------------------------------------------------- spawning actions
+
+void ArenaArmPlacement (int player, int kind, int side, string unitType, int count) {
+    arenaPendingKind[player] = kind;
+    arenaPendingSide[player] = side;
+    arenaPendingType[player] = unitType;
+    arenaPendingCount[player] = count;
+    // The click that armed this mode must not also place it.
+    arenaPendingTime[player] = GameGetMissionTime();
+}
+
+// count 0 spawns enough to equal the other team's value.
+void ArenaSpawnFavorite (int player, int row, int count) {
+    int side;
+    int index;
+    int value;
+    int opposing;
+    string unitType;
+    side = ArenaSelectedSide(player);
+    index = DialogControlGetSelectedItem(arenaRowMenu[row], player);
+    unitType = ArenaRosterType(row, index);
+    if (unitType == "") {
+        return;
+    }
+    if (count == 0) {
+        value = ArenaTypeValue(unitType);
+        opposing = ArenaOpposingValue(side);
+        if (opposing <= 0) {
+            ArenaMessage(player, StringToText("The other team has no units yet. Spawn them first, then match their value."));
+            return;
+        }
+        if (value <= 0) {
+            ArenaMessage(player, UnitTypeGetName(unitType) + StringToText(" has no cost to match with."));
+            return;
+        }
+        count = MaxI(1, (opposing + value / 2) / value);
+        ArenaMessage(player, StringToText(IntToString(count) + " x ") + UnitTypeGetName(unitType)
+            + StringToText(" = " + IntToString(count * value) + " vs " + IntToString(opposing) + " resources."));
+    }
+    if (ArenaRosterIsBuilding(row, index)) {
+        ArenaArmPlacement(player, ARENA_PENDING_PLACE, side, unitType, count);
+        ArenaMessage(player, StringToText("Left-click the map to place " + IntToString(count) + " ")
+            + UnitTypeGetName(unitType) + StringToText(" for " + arenaSideName[side] + ". Right-click cancels."));
+        return;
+    }
+    ArenaSpawnAt(player, side, unitType, count, arenaSpawn[side]);
+    ArenaRefreshStatus();
+}
+
+void ArenaSpawnMix (int player, int race) {
+    int side;
+    int variant;
+    int budget;
+    int packValue;
+    int word;
+    int count;
+    int made;
+    string mix;
+    side = ArenaSelectedSide(player);
+    budget = ArenaOpposingValue(side);
+    if (budget <= 0) {
+        budget = ARENA_DEFAULT_BUDGET;
+    }
+    variant = RandomInt(1, 3);
+    mix = ArenaMix(race, variant);
+    packValue = ArenaMixValue(mix);
+    if (packValue <= 0) {
+        return;
+    }
+    made = 0;
+    word = 1;
+    while (StringWord(mix, word) != "") {
+        count = (StringToInt(StringWord(mix, word + 1)) * budget + packValue / 2) / packValue;
+        // A small budget still gets at least one of the core unit.
+        if (word == 1 && count < 1) {
+            count = 1;
+        }
+        made += ArenaSpawnAt(player, side, StringWord(mix, word), count, arenaSpawn[side]);
+        word += 2;
+    }
+    ArenaRefreshStatus();
+    ArenaMessage(player, StringToText(ArenaMixName(race, variant) + " for " + arenaSideName[side] + ": "
+        + IntToString(made) + " units, about " + IntToString(budget) + " resources."));
+}
+
+// ---------------------------------------------------------------- speed
+
+string ArenaSpeedName (int speed) {
+    if (speed == c_gameSpeedSlower) { return "Slower"; }
+    if (speed == c_gameSpeedSlow) { return "Slow"; }
+    if (speed == c_gameSpeedNormal) { return "Normal"; }
+    if (speed == c_gameSpeedFast) { return "Fast"; }
+    if (speed == c_gameSpeedFaster) { return "Faster"; }
+    return "Unknown";
+}
+
+void ArenaRefreshSpeed () {
+    int speed;
+    int index;
+    int player;
+    speed = GameGetSpeedValue();
+    // Read back the engine's actual speed before updating the label and slider.
+    arenaSpeedIndex = speed;
+    libNtve_gf_SetDialogItemText(arenaSpeedLabel,
+        StringToText("Game speed: " + ArenaSpeedName(speed) + "   (Slower - Faster)"), arenaHumans);
+    index = 1;
+    while (index <= PlayerGroupCount(arenaHumans)) {
+        player = PlayerGroupPlayer(arenaHumans, index);
+        if (DialogControlGetPropertyAsFixed(arenaSpeedSlider, c_triggerControlPropertyValue, player) != IntToFixed(speed)) {
+            DialogControlSetPropertyAsFixed(arenaSpeedSlider, c_triggerControlPropertyValue,
+                PlayerGroupSingle(player), IntToFixed(speed));
+        }
+        index += 1;
+    }
+}
+
+void ArenaSetSpeed (int speed) {
+    if (speed < c_gameSpeedSlower) { speed = c_gameSpeedSlower; }
+    if (speed > c_gameSpeedFaster) { speed = c_gameSpeedFaster; }
+    if (GameGetSpeedValue() != speed) {
+        GameSetSpeedValue(speed);
+    }
+    ArenaRefreshSpeed();
+}
+
+bool ArenaSpeedChanged (bool testConds, bool runActions) {
+    int speed;
+    if (!runActions || !ArenaIsHuman(EventPlayer()) || EventDialogControl() != arenaSpeedSlider) {
+        return true;
+    }
+    // The engine has five discrete presets. Snap dragging to the nearest one.
+    speed = FixedToInt(DialogControlGetPropertyAsFixed(arenaSpeedSlider,
+        c_triggerControlPropertyValue, EventPlayer()) + 0.5);
+    ArenaSetSpeed(speed);
+    return true;
+}
+
+bool ArenaSpeedSync (bool testConds, bool runActions) {
+    if (!runActions) {
+        return true;
+    }
+    // Keep the control accurate if speed is changed through SC2's own controls.
+    if (GameGetSpeedValue() != arenaSpeedIndex) {
+        ArenaRefreshSpeed();
+    }
+    if (arenaStatusDirty) {
+        arenaStatusDirty = false;
+        ArenaRefreshStatus();
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------- events
+
+void ArenaClearSide (int side) {
+    ArenaClearGroup(arenaArmy[side]);
+}
+
+void ArenaToggleTools (int player) {
+    arenaToolsOpen[player] = !arenaToolsOpen[player];
+    DialogSetVisible(arenaToolsDialog, PlayerGroupSingle(player), arenaToolsOpen[player]);
+    if (arenaToolsOpen[player]) {
+        libNtve_gf_SetDialogItemText(arenaToolsButton, StringToText("Hide tools"), PlayerGroupSingle(player));
+    }
+    else {
+        libNtve_gf_SetDialogItemText(arenaToolsButton, StringToText("Show tools"), PlayerGroupSingle(player));
+    }
+}
+
+bool ArenaButtonClicked (bool testConds, bool runActions) {
+    int control;
+    int player;
+    int side;
+    int row;
+    int race;
+    if (!runActions || !ArenaIsHuman(EventPlayer())) {
+        return true;
+    }
+    player = EventPlayer();
+    control = EventDialogControl();
+    side = ArenaSelectedSide(player);
+    row = 1;
+    while (row <= ARENA_ROWS) {
+        if (control == arenaRowButton[row][ARENA_BUTTON_TEN]) { ArenaSpawnFavorite(player, row, 10); return true; }
+        if (control == arenaRowButton[row][ARENA_BUTTON_FIVE]) { ArenaSpawnFavorite(player, row, 5); return true; }
+        if (control == arenaRowButton[row][ARENA_BUTTON_ONE]) { ArenaSpawnFavorite(player, row, 1); return true; }
+        if (control == arenaRowButton[row][ARENA_BUTTON_EQUAL]) { ArenaSpawnFavorite(player, row, 0); return true; }
+        row += 1;
+    }
+    race = 1;
+    while (race <= 3) {
+        if (control == arenaMixButton[race]) {
+            ArenaSpawnMix(player, race);
+            return true;
+        }
+        race += 1;
+    }
+    if (control == arenaClearButton) {
+        ArenaClearSide(side);
+        ArenaRefreshStatus();
+    }
+    else if (control == arenaResetButton) {
+        side = 1;
+        while (side <= ARENA_SIDES) {
+            ArenaClearSide(side);
+            side += 1;
+        }
+        ArenaRefreshStatus();
+    }
+    else if (control == arenaToolsButton) {
+        ArenaToggleTools(player);
+    }
+    else if (control == arenaSaveButton) {
+        ArenaSaveLoadout(player);
+    }
+    else if (control == arenaDeployButton) {
+        ArenaDeployLoadout(player);
+    }
+    else if (control == arenaUpgradeButton) {
+        arenaSideUpgrades[side] = !arenaSideUpgrades[side];
+        ArenaApplyUpgrades(side);
+        ArenaRefreshSideControls(player);
+    }
+    else if (control == arenaMoveSpawnButton) {
+        ArenaArmPlacement(player, ARENA_PENDING_SPAWN_POINT, side, "", 0);
+        ArenaMessage(player, StringToText("Left-click the map to move " + arenaSideName[side] + "'s spawn point. Right-click cancels."));
+    }
+    return true;
+}
+
+bool ArenaMenuChanged (bool testConds, bool runActions) {
+    int player;
+    int row;
+    if (!runActions || !ArenaIsHuman(EventPlayer())) {
+        return true;
+    }
+    player = EventPlayer();
+    if (EventDialogControl() == arenaSideMenu) {
+        ArenaRefreshSideControls(player);
+    }
+    else if (EventDialogControl() == arenaSlotMenu) {
+        ArenaRefreshSlot(player);
+    }
+    else {
+        // A favorite row changed; remember it for the next session.
+        row = 1;
+        while (row <= ARENA_ROWS) {
+            if (EventDialogControl() == arenaRowMenu[row]) {
+                ArenaBankSaveRow(player, row);
+            }
+            row += 1;
+        }
+    }
+    return true;
+}
+
+bool ArenaMouseClicked (bool testConds, bool runActions) {
+    int player;
+    int kind;
+    int side;
+    point where;
+    if (!runActions) {
+        return true;
+    }
+    player = EventPlayer();
+    kind = arenaPendingKind[player];
+    if (kind == ARENA_PENDING_NONE || GameGetMissionTime() <= arenaPendingTime[player]) {
+        return true;
+    }
+    arenaPendingKind[player] = ARENA_PENDING_NONE;
+    if (EventMouseClickedButton() != c_mouseButtonLeft) {
+        ArenaMessage(player, StringToText("Cancelled."));
+        return true;
+    }
+    where = Point(EventMouseClickedPosXWorld(), EventMouseClickedPosYWorld());
+    if (!RegionContainsPoint(RegionPlayableMap(), where)) {
+        ArenaMessage(player, StringToText("That spot is outside the arena."));
+        return true;
+    }
+    side = arenaPendingSide[player];
+    if (kind == ARENA_PENDING_PLACE) {
+        ArenaSpawnAt(player, side, arenaPendingType[player], arenaPendingCount[player], where);
+        ArenaRefreshStatus();
+    }
+    else if (kind == ARENA_PENDING_SPAWN_POINT) {
+        arenaSpawn[side] = where;
+        ArenaMessage(player, StringToText(arenaSideName[side] + " now spawns at the clicked point."));
+    }
+    return true;
+}
+
+// Numpad 7-8-9, 4-5-6 and 1-2-3 mirror the three rows' 10x/5x/1x buttons.
+// Numpad 0 cycles the side being spawned for.
+bool ArenaKeyPressed (bool testConds, bool runActions) {
+    int player;
+    int key;
+    int side;
+    if (!runActions || !ArenaIsHuman(EventPlayer())) {
+        return true;
+    }
+    player = EventPlayer();
+    key = EventKeyPressed();
+    if (key == c_keyNumPad7) { ArenaSpawnFavorite(player, 1, 10); }
+    else if (key == c_keyNumPad8) { ArenaSpawnFavorite(player, 1, 5); }
+    else if (key == c_keyNumPad9) { ArenaSpawnFavorite(player, 1, 1); }
+    else if (key == c_keyNumPad4) { ArenaSpawnFavorite(player, 2, 10); }
+    else if (key == c_keyNumPad5) { ArenaSpawnFavorite(player, 2, 5); }
+    else if (key == c_keyNumPad6) { ArenaSpawnFavorite(player, 2, 1); }
+    else if (key == c_keyNumPad1) { ArenaSpawnFavorite(player, 3, 10); }
+    else if (key == c_keyNumPad2) { ArenaSpawnFavorite(player, 3, 5); }
+    else if (key == c_keyNumPad3) { ArenaSpawnFavorite(player, 3, 1); }
+    else if (key == c_keyNumPad0) {
+        side = ArenaSelectedSide(player) + 1;
+        if (side > ARENA_SIDES) {
+            side = 1;
+        }
+        DialogControlSelectItem(arenaSideMenu, PlayerGroupSingle(player), side);
+        ArenaRefreshSideControls(player);
+        ArenaMessage(player, StringToText("Spawning for " + arenaSideName[side] + "."));
+    }
+    return true;
+}
+
+bool ArenaUnitDied (bool testConds, bool runActions) {
+    unit target;
+    int side;
+    bool tracked;
+    if (!runActions) {
+        return true;
+    }
+    target = EventUnit();
+    tracked = false;
+    side = 1;
+    while (side <= ARENA_SIDES) {
+        if (UnitGroupHasUnit(arenaArmy[side], target)) {
+            UnitGroupRemove(arenaArmy[side], target);
+            tracked = true;
+        }
+        side += 1;
+    }
+    if (tracked) {
+        // Big fights kill many units per second; the periodic sync redraws the totals.
+        arenaStatusDirty = true;
+        // Remove the dead unit handle so long sessions do not accumulate corpses.
+        UnitRemove(target);
+    }
+    return true;
+}
+
+// Idle computer-run units look for the other team again.
+bool ArenaAITick (bool testConds, bool runActions) {
+    int side;
+    int index;
+    unit member;
+    if (!runActions) {
+        return true;
+    }
+    side = 1;
+    while (side <= ARENA_SIDES) {
+        if (ArenaSideIsAI(side)) {
+            index = 1;
+            while (index <= UnitGroupCount(arenaArmy[side], c_unitCountAll)) {
+                member = UnitGroupUnit(arenaArmy[side], index);
+                if (UnitIsAlive(member) && UnitOrderCount(member) == 0) {
+                    ArenaCommand(side, member);
+                }
+                index += 1;
+            }
+        }
+        side += 1;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------- layout
+
+int ArenaLabel (int dialog, int x, int y, int width, string caption) {
+    int control;
+    control = DialogControlCreate(dialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(control, arenaHumans, width, 24);
+    DialogControlSetPosition(control, arenaHumans, c_anchorTopLeft, x, y);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), arenaHumans);
+    return control;
+}
+
+int ArenaButton (int dialog, int x, int y, int width, string caption) {
+    int control;
+    control = DialogControlCreate(dialog, c_triggerControlTypeButton);
+    DialogControlSetSize(control, arenaHumans, width, 38);
+    DialogControlSetPosition(control, arenaHumans, c_anchorTopLeft, x, y);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), arenaHumans);
+    return control;
+}
+
+int ArenaMenu (int dialog, int x, int y, int width) {
+    int control;
+    control = DialogControlCreate(dialog, c_triggerControlTypePulldown);
+    // SC2's pulldown frame needs more vertical padding than a plain button.
+    DialogControlSetSize(control, arenaHumans, width, 52);
+    DialogControlSetPosition(control, arenaHumans, c_anchorTopLeft, x, y);
+    return control;
+}
+
+void ArenaFillRow (int row, string defaultType) {
+    int index;
+    text caption;
+    index = 1;
+    while (index <= ArenaRosterCount(row)) {
+        caption = UnitTypeGetName(ArenaRosterType(row, index));
+        if (ArenaRosterIsBuilding(row, index)) {
+            caption = StringToText("[Building] ") + caption;
+        }
+        DialogControlAddItem(arenaRowMenu[row], arenaHumans, caption);
+        index += 1;
+    }
+    DialogControlSelectItem(arenaRowMenu[row], arenaHumans, ArenaRosterIndex(row, defaultType));
+}
+
+void ArenaBuildPanel () {
+    int row;
+    int y;
+    int side;
+    int slot;
+
+    // Main panel: what the sketch asked for, plus the essentials.
+    arenaDialog = DialogCreate(392, 470, c_anchorTopLeft, 14, 14, false);
+    ArenaLabel(arenaDialog, 20, 14, 340, "INSTANT ARENA");
+    arenaTeamOneLabel = ArenaLabel(arenaDialog, 20, 38, 350, "");
+    arenaTeamTwoLabel = ArenaLabel(arenaDialog, 20, 60, 350, "");
+
+    ArenaLabel(arenaDialog, 20, 96, 90, "Spawn for:");
+    arenaSideMenu = ArenaMenu(arenaDialog, 110, 84, 260);
+    side = 1;
+    while (side <= ARENA_SIDES) {
+        DialogControlAddItem(arenaSideMenu, arenaHumans, StringToText("Team " + IntToString(arenaSideTeam[side]) + ": " + arenaSideName[side]));
+        side += 1;
+    }
+    DialogControlSelectItem(arenaSideMenu, arenaHumans, 1);
+    // A second human starts on team 2.
+    DialogControlSelectItem(arenaSideMenu, PlayerGroupSingle(2), 3);
+
+    row = 1;
+    while (row <= ARENA_ROWS) {
+        y = 140 + (row - 1) * 56;
+        arenaRowMenu[row] = ArenaMenu(arenaDialog, 16, y, 170);
+        arenaRowButton[row][ARENA_BUTTON_TEN] = ArenaButton(arenaDialog, 188, y + 6, 44, "10x");
+        arenaRowButton[row][ARENA_BUTTON_FIVE] = ArenaButton(arenaDialog, 232, y + 6, 40, "5x");
+        arenaRowButton[row][ARENA_BUTTON_ONE] = ArenaButton(arenaDialog, 272, y + 6, 40, "1x");
+        arenaRowButton[row][ARENA_BUTTON_EQUAL] = ArenaButton(arenaDialog, 312, y + 6, 64, "Match");
+        DialogControlSetPropertyAsText(arenaRowButton[row][ARENA_BUTTON_EQUAL], c_triggerControlPropertyTooltip,
+            arenaHumans, StringToText("Spawn enough of this unit to equal the other team's total cost."));
+        row += 1;
+    }
+    ArenaFillRow(1, "Marine");
+    ArenaFillRow(2, "VoidRay");
+    ArenaFillRow(3, "Queen");
+
+    arenaClearButton = ArenaButton(arenaDialog, 16, 318, 116, "Clear side");
+    arenaResetButton = ArenaButton(arenaDialog, 134, 318, 116, "Reset arena");
+    arenaToolsButton = ArenaButton(arenaDialog, 252, 318, 118, "Hide tools");
+
+    arenaSpeedLabel = ArenaLabel(arenaDialog, 20, 368, 350, "");
+    arenaSpeedSlider = DialogControlCreate(arenaDialog, c_triggerControlTypeSlider);
+    DialogControlSetSize(arenaSpeedSlider, arenaHumans, 350, 32);
+    DialogControlSetPosition(arenaSpeedSlider, arenaHumans, c_anchorTopLeft, 20, 396);
+    DialogControlSetPropertyAsFixed(arenaSpeedSlider, c_triggerControlPropertyMinValue,
+        arenaHumans, IntToFixed(c_gameSpeedSlower));
+    DialogControlSetPropertyAsFixed(arenaSpeedSlider, c_triggerControlPropertyMaxValue,
+        arenaHumans, IntToFixed(c_gameSpeedFaster));
+    DialogControlSetPropertyAsText(arenaSpeedSlider, c_triggerControlPropertyTooltip,
+        arenaHumans, StringToText("Changes game speed immediately for the whole match."));
+    ArenaLabel(arenaDialog, 20, 434, 350, "Numpad 7-9 / 4-6 / 1-3: rows at 10x 5x 1x.  Numpad 0: side.");
+
+    // Tools panel, directly below.
+    arenaToolsDialog = DialogCreate(392, 262, c_anchorTopLeft, 14, 488, false);
+    ArenaLabel(arenaToolsDialog, 20, 14, 350, "Realistic army (matches the other team's value):");
+    arenaMixButton[1] = ArenaButton(arenaToolsDialog, 16, 40, 116, "Terran mix");
+    arenaMixButton[2] = ArenaButton(arenaToolsDialog, 134, 40, 116, "Protoss mix");
+    arenaMixButton[3] = ArenaButton(arenaToolsDialog, 252, 40, 118, "Zerg mix");
+
+    arenaSlotMenu = ArenaMenu(arenaToolsDialog, 16, 88, 150);
+    slot = 1;
+    while (slot <= ARENA_SLOTS) {
+        DialogControlAddItem(arenaSlotMenu, arenaHumans, StringToText("Loadout " + IntToString(slot)));
+        slot += 1;
+    }
+    DialogControlSelectItem(arenaSlotMenu, arenaHumans, 1);
+    arenaSaveButton = ArenaButton(arenaToolsDialog, 168, 94, 100, "Save army");
+    arenaDeployButton = ArenaButton(arenaToolsDialog, 270, 94, 100, "Deploy");
+    arenaSlotLabel = ArenaLabel(arenaToolsDialog, 20, 140, 350, "");
+
+    arenaUpgradeButton = ArenaButton(arenaToolsDialog, 16, 172, 176, "Max upgrades: ON");
+    arenaMoveSpawnButton = ArenaButton(arenaToolsDialog, 194, 172, 176, "Move spawn point");
+    ArenaLabel(arenaToolsDialog, 20, 220, 350, "Buildings: pick one in a row, then click the map.");
+}
+
+void ArenaInit () {
+    int player;
+    int side;
+    int index;
+    point low;
+    point high;
+    fixed width;
+    fixed height;
+    trigger buttonTrigger;
+    trigger menuTrigger;
+    trigger speedTrigger;
+    trigger speedSyncTrigger;
+    trigger deathTrigger;
+    trigger mouseTrigger;
+    trigger keyTrigger;
+    trigger aiTrigger;
+
+    // Team 1: players 1 and 3. Team 2: players 2 and 4. Player 2 may be a second human.
+    arenaSidePlayer[1] = 1;
+    arenaSidePlayer[2] = 3;
+    arenaSidePlayer[3] = 2;
+    arenaSidePlayer[4] = 4;
+    arenaSideTeam[1] = 1;
+    arenaSideTeam[2] = 1;
+    arenaSideTeam[3] = 2;
+    arenaSideTeam[4] = 2;
+    // Spawns scale with the playable area, so a resized map needs no code change.
+    low = RegionGetBoundsMin(RegionPlayableMap());
+    high = RegionGetBoundsMax(RegionPlayableMap());
+    width = PointGetX(high) - PointGetX(low);
+    height = PointGetY(high) - PointGetY(low);
+    arenaCenter = Point(PointGetX(low) + width / 2.0, PointGetY(low) + height / 2.0);
+    arenaSpawn[1] = Point(PointGetX(low) + width * 0.28, PointGetY(arenaCenter) - height * 0.1);
+    arenaSpawn[2] = Point(PointGetX(low) + width * 0.28, PointGetY(arenaCenter) + height * 0.1);
+    arenaSpawn[3] = Point(PointGetX(high) - width * 0.28, PointGetY(arenaCenter) - height * 0.1);
+    arenaSpawn[4] = Point(PointGetX(high) - width * 0.28, PointGetY(arenaCenter) + height * 0.1);
+
+    arenaHumans = PlayerGroupEmpty();
+    PlayerGroupAdd(arenaHumans, 1);
+    if (PlayerStatus(2) == c_playerStatusActive) {
+        PlayerGroupAdd(arenaHumans, 2);
+    }
+    arenaSideName[1] = "You";
+    arenaSideName[2] = "Ally AI";
+    arenaSideName[3] = "Enemy";
+    arenaSideName[4] = "Enemy AI";
+    if (ArenaIsHuman(2)) {
+        arenaSideName[1] = "Player 1";
+        arenaSideName[3] = "Player 2";
+    }
+
+    // Deliberately omit melee initialization: no starting economy or defeat rules.
+    side = 1;
+    while (side <= ARENA_SIDES) {
+        arenaArmy[side] = UnitGroupEmpty();
+        arenaSideUpgrades[side] = true;
+        index = 1;
+        while (index <= ARENA_SIDES) {
+            if (index != side) {
+                if (arenaSideTeam[index] == arenaSideTeam[side]) {
+                    libNtve_gf_SetAlliance(arenaSidePlayer[side], arenaSidePlayer[index], libNtve_ge_AllianceSetting_AllyWithSharedVision);
+                }
+                else {
+                    libNtve_gf_SetAlliance(arenaSidePlayer[side], arenaSidePlayer[index], libNtve_ge_AllianceSetting_Enemy);
+                }
+            }
+            index += 1;
+        }
+        ArenaInfiniteResources(arenaSidePlayer[side]);
+        ArenaApplyUpgrades(side);
+        side += 1;
+    }
+
+    ArenaBuildPanel();
+    index = 1;
+    while (index <= PlayerGroupCount(arenaHumans)) {
+        player = PlayerGroupPlayer(arenaHumans, index);
+        VisRevealArea(player, RegionEntireMap(), 0.0, false);
+        CameraPan(player, arenaCenter, 0.0, 0.0, 10.0, false);
+        arenaToolsOpen[player] = true;
+        ArenaBankLoad(player);
+        ArenaRefreshSlot(player);
+        ArenaRefreshSideControls(player);
+        index += 1;
+    }
+    GameSetSpeedLocked(false);
+    GameSetSpeedValueMinimum(c_gameSpeedSlower);
+    ArenaSetSpeed(c_gameSpeedNormal);
+    ArenaRefreshStatus();
+    DialogSetVisible(arenaDialog, arenaHumans, true);
+    DialogSetVisible(arenaToolsDialog, arenaHumans, true);
+
+    buttonTrigger = TriggerCreate("ArenaButtonClicked");
+    menuTrigger = TriggerCreate("ArenaMenuChanged");
+    speedTrigger = TriggerCreate("ArenaSpeedChanged");
+    mouseTrigger = TriggerCreate("ArenaMouseClicked");
+    keyTrigger = TriggerCreate("ArenaKeyPressed");
+    index = 1;
+    while (index <= PlayerGroupCount(arenaHumans)) {
+        player = PlayerGroupPlayer(arenaHumans, index);
+        TriggerAddEventDialogControl(buttonTrigger, player, c_invalidDialogControlId, c_triggerControlEventTypeClick);
+        TriggerAddEventDialogControl(menuTrigger, player, c_invalidDialogControlId, c_triggerControlEventTypeSelectionChanged);
+        TriggerAddEventDialogControl(speedTrigger, player, arenaSpeedSlider, c_triggerControlEventTypeValueChanged);
+        TriggerAddEventMouseClicked(mouseTrigger, player, c_mouseButtonLeft, true);
+        TriggerAddEventMouseClicked(mouseTrigger, player, c_mouseButtonRight, true);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad0, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad1, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad2, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad3, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad4, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad5, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad6, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad7, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad8, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        TriggerAddEventKeyPressed(keyTrigger, player, c_keyNumPad9, true, c_keyModifierStateIgnore, c_keyModifierStateIgnore, c_keyModifierStateIgnore);
+        index += 1;
+    }
+    speedSyncTrigger = TriggerCreate("ArenaSpeedSync");
+    TriggerAddEventTimePeriodic(speedSyncTrigger, 0.5, c_timeReal);
+    aiTrigger = TriggerCreate("ArenaAITick");
+    TriggerAddEventTimePeriodic(aiTrigger, 2.0, c_timeGame);
+    deathTrigger = TriggerCreate("ArenaUnitDied");
+    TriggerAddEventUnitDied(deathTrigger, null);
+}

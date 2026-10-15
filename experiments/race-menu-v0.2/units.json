@@ -1,0 +1,212 @@
+[
+  {
+    "race": "Terran",
+    "units": [
+      {
+        "id": "SCV",
+        "name": "SCV",
+        "icon": "Assets\\Textures\\btn-unit-terran-scv.dds"
+      },
+      {
+        "id": "Marine",
+        "name": "Marine",
+        "icon": "Assets\\Textures\\btn-unit-terran-marine.dds"
+      },
+      {
+        "id": "Marauder",
+        "name": "Marauder",
+        "icon": "Assets\\Textures\\btn-unit-terran-marauder.dds"
+      },
+      {
+        "id": "Reaper",
+        "name": "Reaper",
+        "icon": "Assets\\Textures\\btn-unit-terran-reaper.dds"
+      },
+      {
+        "id": "Ghost",
+        "name": "Ghost",
+        "icon": "Assets\\Textures\\btn-unit-terran-ghost.dds"
+      },
+      {
+        "id": "Hellion",
+        "name": "Hellion",
+        "icon": "Assets\\Textures\\btn-unit-terran-hellion.dds"
+      },
+      {
+        "id": "SiegeTank",
+        "name": "Siege Tank",
+        "icon": "Assets\\Textures\\btn-unit-terran-siegetank.dds"
+      },
+      {
+        "id": "Thor",
+        "name": "Thor",
+        "icon": "Assets\\Textures\\btn-unit-terran-thor.dds"
+      },
+      {
+        "id": "VikingFighter",
+        "name": "Viking (Fighter)",
+        "icon": "Assets\\Textures\\btn-unit-terran-vikingfighter.dds"
+      },
+      {
+        "id": "Medivac",
+        "name": "Medivac",
+        "icon": "Assets\\Textures\\btn-unit-terran-medivac.dds"
+      },
+      {
+        "id": "Banshee",
+        "name": "Banshee",
+        "icon": "Assets\\Textures\\btn-unit-terran-banshee.dds"
+      },
+      {
+        "id": "Raven",
+        "name": "Raven",
+        "icon": "Assets\\Textures\\btn-unit-terran-raven.dds"
+      },
+      {
+        "id": "Battlecruiser",
+        "name": "Battlecruiser",
+        "icon": "Assets\\Textures\\btn-unit-terran-battlecruiser.dds"
+      }
+    ]
+  },
+  {
+    "race": "Protoss",
+    "units": [
+      {
+        "id": "Probe",
+        "name": "Probe",
+        "icon": "Assets\\Textures\\btn-unit-protoss-probe.dds"
+      },
+      {
+        "id": "Zealot",
+        "name": "Zealot",
+        "icon": "Assets\\Textures\\btn-unit-protoss-zealot.dds"
+      },
+      {
+        "id": "Stalker",
+        "name": "Stalker",
+        "icon": "Assets\\Textures\\btn-unit-protoss-stalker.dds"
+      },
+      {
+        "id": "Sentry",
+        "name": "Sentry",
+        "icon": "Assets\\Textures\\btn-unit-protoss-sentry.dds"
+      },
+      {
+        "id": "HighTemplar",
+        "name": "High Templar",
+        "icon": "Assets\\Textures\\btn-unit-protoss-hightemplar.dds"
+      },
+      {
+        "id": "DarkTemplar",
+        "name": "Dark Templar",
+        "icon": "Assets\\Textures\\btn-unit-protoss-darktemplar.dds"
+      },
+      {
+        "id": "Archon",
+        "name": "Archon",
+        "icon": "Assets\\Textures\\btn-unit-protoss-archon.dds"
+      },
+      {
+        "id": "Immortal",
+        "name": "Immortal",
+        "icon": "Assets\\Textures\\BTN-Unit-Protoss-Immortal.dds"
+      },
+      {
+        "id": "Colossus",
+        "name": "Colossus",
+        "icon": "Assets\\Textures\\btn-unit-protoss-colossus.dds"
+      },
+      {
+        "id": "Phoenix",
+        "name": "Phoenix",
+        "icon": "Assets\\Textures\\btn-unit-protoss-phoenix.dds"
+      },
+      {
+        "id": "VoidRay",
+        "name": "Void Ray",
+        "icon": "Assets\\Textures\\btn-unit-protoss-warpray.dds"
+      },
+      {
+        "id": "Carrier",
+        "name": "Carrier",
+        "icon": "Assets\\Textures\\btn-unit-protoss-carrier.dds"
+      },
+      {
+        "id": "Mothership",
+        "name": "Mothership",
+        "icon": "Assets\\Textures\\btn-unit-protoss-mothership.dds"
+      }
+    ]
+  },
+  {
+    "race": "Zerg",
+    "units": [
+      {
+        "id": "Drone",
+        "name": "Drone",
+        "icon": "Assets\\Textures\\btn-unit-zerg-drone.dds"
+      },
+      {
+        "id": "Zergling",
+        "name": "Zergling",
+        "icon": "Assets\\Textures\\btn-unit-zerg-zergling.dds"
+      },
+      {
+        "id": "Baneling",
+        "name": "Baneling",
+        "icon": "Assets\\Textures\\btn-unit-zerg-baneling.dds"
+      },
+      {
+        "id": "Roach",
+        "name": "Roach",
+        "icon": "Assets\\Textures\\btn-unit-zerg-roach.dds"
+      },
+      {
+        "id": "Hydralisk",
+        "name": "Hydralisk",
+        "icon": "Assets\\Textures\\btn-unit-zerg-hydralisk.dds"
+      },
+      {
+        "id": "Infestor",
+        "name": "Infestor",
+        "icon": "Assets\\Textures\\btn-unit-zerg-infestor.dds"
+      },
+      {
+        "id": "Queen",
+        "name": "Queen",
+        "icon": "Assets\\Textures\\btn-unit-zerg-queen.dds"
+      },
+      {
+        "id": "Ultralisk",
+        "name": "Ultralisk",
+        "icon": "Assets\\Textures\\btn-unit-zerg-omegalisk.dds"
+      },
+      {
+        "id": "Overlord",
+        "name": "Overlord",
+        "icon": "Assets\\Textures\\btn-unit-zerg-overlord.dds"
+      },
+      {
+        "id": "Overseer",
+        "name": "Overseer",
+        "icon": "Assets\\Textures\\btn-unit-zerg-overseer.dds"
+      },
+      {
+        "id": "Mutalisk",
+        "name": "Mutalisk",
+        "icon": "Assets\\Textures\\btn-unit-zerg-mutalisk.dds"
+      },
+      {
+        "id": "Corruptor",
+        "name": "Corruptor",
+        "icon": "Assets\\Textures\\btn-unit-zerg-corruptor.dds"
+      },
+      {
+        "id": "BroodLord",
+        "name": "Brood Lord",
+        "icon": "Assets\\Textures\\btn-unit-zerg-mantalisk.dds"
+      }
+    ]
+  }
+]

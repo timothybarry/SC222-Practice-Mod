@@ -1,0 +1,333 @@
+// Instant Arena v0.2 - race menus, unit icons, and live game speed.
+// tools/build_map.py embeds this code and the roster in the editable map.
+
+const int ARENA_PLAYER = 1;
+const int ARENA_ENEMY = 15;
+const int ARENA_LIMIT = 100;
+const int ARENA_GRID_SLOTS = 15;
+
+unitgroup arenaMyArmy;
+unitgroup arenaEnemyArmy;
+point arenaMySpawn;
+point arenaEnemySpawn;
+int arenaDialog;
+int arenaRaceButtons[3];
+int arenaUnitButtons[ARENA_GRID_SLOTS];
+int arenaUnitImages[ARENA_GRID_SLOTS];
+int arenaVisibleUnits[ARENA_GRID_SLOTS];
+string arenaUnitTypes[64];
+string arenaUnitNames[64];
+string arenaUnitIcons[64];
+string arenaRaceNames[3];
+int arenaRaceFirstUnit[3];
+int arenaRaceUnitCounts[3];
+int arenaCurrentRace;
+int arenaSpawnOwner;
+int arenaMineButton;
+int arenaEnemyButton;
+int arenaClearButton;
+int arenaResetButton;
+int arenaStatusLabel;
+int arenaSpeedLabel;
+int arenaSpeedSlider;
+int arenaSpeedIndex;
+
+// @ARENA_ROSTER@
+
+int ArenaControl (int type, int x, int y, int width, int height) {
+    int control;
+    control = DialogControlCreate(arenaDialog, type);
+    DialogControlSetSize(control, PlayerGroupSingle(ARENA_PLAYER), width, height);
+    DialogControlSetPosition(control, PlayerGroupSingle(ARENA_PLAYER), c_anchorTopLeft, x, y);
+    return control;
+}
+
+int ArenaLabel (string caption, int x, int y, int width, int height) {
+    int control;
+    control = ArenaControl(c_triggerControlTypeLabel, x, y, width, height);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+    return control;
+}
+
+int ArenaButton (string caption, int x, int y, int width, int height) {
+    int control;
+    control = ArenaControl(c_triggerControlTypeButton, x, y, width, height);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+    return control;
+}
+
+void ArenaRefreshStatus () {
+    string status;
+    status = "Mine: " + IntToString(UnitGroupCount(arenaMyArmy, c_unitCountAlive));
+    status = status + " / " + IntToString(ARENA_LIMIT) + "    Enemy: ";
+    status = status + IntToString(UnitGroupCount(arenaEnemyArmy, c_unitCountAlive));
+    status = status + " / " + IntToString(ARENA_LIMIT);
+    libNtve_gf_SetDialogItemText(arenaStatusLabel, StringToText(status), PlayerGroupSingle(ARENA_PLAYER));
+}
+
+void ArenaSelectRace (int race) {
+    int slot;
+    int index;
+    string caption;
+    string tooltip;
+    arenaCurrentRace = race;
+    slot = 0;
+    while (slot < 3) {
+        caption = arenaRaceNames[slot];
+        if (slot == race) {
+            caption = "[ " + caption + " ]";
+        }
+        libNtve_gf_SetDialogItemText(arenaRaceButtons[slot], StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+        slot += 1;
+    }
+    slot = 0;
+    while (slot < ARENA_GRID_SLOTS) {
+        if (slot < arenaRaceUnitCounts[race]) {
+            index = arenaRaceFirstUnit[race] + slot;
+            arenaVisibleUnits[slot] = index;
+            libNtve_gf_SetDialogItemImage(arenaUnitImages[slot], arenaUnitIcons[index], PlayerGroupSingle(ARENA_PLAYER));
+            tooltip = arenaUnitNames[index] + "\nClick to instantly spawn for ";
+            if (arenaSpawnOwner == ARENA_PLAYER) {
+                tooltip = tooltip + "your army.";
+            }
+            else {
+                tooltip = tooltip + "the enemy army.";
+            }
+            libNtve_gf_SetDialogItemTooltip(arenaUnitButtons[slot], StringToText(tooltip), PlayerGroupSingle(ARENA_PLAYER));
+            DialogControlSetVisible(arenaUnitButtons[slot], PlayerGroupSingle(ARENA_PLAYER), true);
+            DialogControlSetVisible(arenaUnitImages[slot], PlayerGroupSingle(ARENA_PLAYER), true);
+        }
+        else {
+            arenaVisibleUnits[slot] = -1;
+            DialogControlSetVisible(arenaUnitButtons[slot], PlayerGroupSingle(ARENA_PLAYER), false);
+            DialogControlSetVisible(arenaUnitImages[slot], PlayerGroupSingle(ARENA_PLAYER), false);
+        }
+        slot += 1;
+    }
+}
+
+void ArenaSelectOwner (int owner) {
+    arenaSpawnOwner = owner;
+    if (owner == ARENA_PLAYER) {
+        libNtve_gf_SetDialogItemText(arenaMineButton, StringToText("[ Mine ]"), PlayerGroupSingle(ARENA_PLAYER));
+        libNtve_gf_SetDialogItemText(arenaEnemyButton, StringToText("Enemy"), PlayerGroupSingle(ARENA_PLAYER));
+    }
+    else {
+        libNtve_gf_SetDialogItemText(arenaMineButton, StringToText("Mine"), PlayerGroupSingle(ARENA_PLAYER));
+        libNtve_gf_SetDialogItemText(arenaEnemyButton, StringToText("[ Enemy ]"), PlayerGroupSingle(ARENA_PLAYER));
+    }
+    ArenaSelectRace(arenaCurrentRace);
+}
+
+void ArenaClearGroup (unitgroup army) {
+    unit target;
+    while (UnitGroupCount(army, c_unitCountAll) > 0) {
+        target = UnitGroupUnit(army, 1);
+        UnitGroupRemove(army, target);
+        UnitRemove(target);
+    }
+}
+
+void ArenaSpawn (int owner, string unitType) {
+    unitgroup army;
+    unitgroup created;
+    unit spawned;
+    point spawn;
+    fixed facing;
+    if (owner == ARENA_PLAYER) {
+        army = arenaMyArmy;
+        spawn = arenaMySpawn;
+        facing = 0.0;
+    }
+    else {
+        army = arenaEnemyArmy;
+        spawn = arenaEnemySpawn;
+        facing = 180.0;
+    }
+    if (UnitGroupCount(army, c_unitCountAlive) >= ARENA_LIMIT) {
+        UIDisplayMessage(PlayerGroupSingle(ARENA_PLAYER), c_messageAreaSubtitle,
+            StringToText(IntToString(ARENA_LIMIT) + " living units on this side. Clear an army or fight to make room."));
+        return;
+    }
+    created = UnitCreate(1, unitType, 0, owner, spawn, facing);
+    spawned = UnitGroupUnit(created, 1);
+    if (spawned != null) {
+        UnitGroupAdd(army, spawned);
+        if (owner == ARENA_ENEMY) {
+            if (UnitAbilityExists(spawned, "attack")) {
+                UnitIssueOrder(spawned,
+                    OrderTargetingPoint(AbilityCommand("attack", 0), arenaMySpawn), c_orderQueueReplace);
+            }
+            else if (UnitAbilityExists(spawned, "move")) {
+                UnitIssueOrder(spawned,
+                    OrderTargetingPoint(AbilityCommand("move", 0), arenaMySpawn), c_orderQueueReplace);
+            }
+        }
+    }
+    else {
+        UIDisplayMessage(PlayerGroupSingle(ARENA_PLAYER), c_messageAreaSubtitle,
+            StringToText("No room at the spawn point. Move units away or clear an army."));
+    }
+    ArenaRefreshStatus();
+}
+
+string ArenaSpeedName (int speed) {
+    if (speed == c_gameSpeedSlower) { return "Slower"; }
+    if (speed == c_gameSpeedSlow) { return "Slow"; }
+    if (speed == c_gameSpeedNormal) { return "Normal"; }
+    if (speed == c_gameSpeedFast) { return "Fast"; }
+    return "Faster";
+}
+
+void ArenaRefreshSpeed () {
+    arenaSpeedIndex = GameGetSpeedValue();
+    libNtve_gf_SetDialogItemCurrentValue(arenaSpeedSlider, IntToFixed(arenaSpeedIndex), PlayerGroupSingle(ARENA_PLAYER));
+    libNtve_gf_SetDialogItemText(arenaSpeedLabel,
+        StringToText("Game speed: " + ArenaSpeedName(arenaSpeedIndex)), PlayerGroupSingle(ARENA_PLAYER));
+}
+
+bool ArenaSpeedChanged (bool testConds, bool runActions) {
+    int speed;
+    if (!runActions || EventPlayer() != ARENA_PLAYER) {
+        return true;
+    }
+    speed = FixedToInt(libNtve_gf_DialogItemValue(arenaSpeedSlider, ARENA_PLAYER) + 0.5);
+    if (speed < c_gameSpeedSlower) { speed = c_gameSpeedSlower; }
+    if (speed > c_gameSpeedFaster) { speed = c_gameSpeedFaster; }
+    if (speed != arenaSpeedIndex) {
+        GameSetSpeedValue(speed);
+        ArenaRefreshSpeed();
+    }
+    return true;
+}
+
+bool ArenaButtonClicked (bool testConds, bool runActions) {
+    int control;
+    int slot;
+    int index;
+    if (!runActions || EventPlayer() != ARENA_PLAYER) {
+        return true;
+    }
+    control = EventDialogControl();
+    if (control == arenaMineButton) {
+        ArenaSelectOwner(ARENA_PLAYER);
+        return true;
+    }
+    if (control == arenaEnemyButton) {
+        ArenaSelectOwner(ARENA_ENEMY);
+        return true;
+    }
+    if (control == arenaClearButton) {
+        ArenaClearGroup(arenaMyArmy);
+        ArenaRefreshStatus();
+        return true;
+    }
+    if (control == arenaResetButton) {
+        ArenaClearGroup(arenaMyArmy);
+        ArenaClearGroup(arenaEnemyArmy);
+        ArenaRefreshStatus();
+        return true;
+    }
+    slot = 0;
+    while (slot < 3) {
+        if (control == arenaRaceButtons[slot]) {
+            ArenaSelectRace(slot);
+            return true;
+        }
+        slot += 1;
+    }
+    slot = 0;
+    while (slot < ARENA_GRID_SLOTS) {
+        if (control == arenaUnitButtons[slot]) {
+            index = arenaVisibleUnits[slot];
+            if (index >= 0) {
+                ArenaSpawn(arenaSpawnOwner, arenaUnitTypes[index]);
+            }
+            return true;
+        }
+        slot += 1;
+    }
+    return true;
+}
+
+bool ArenaUnitDied (bool testConds, bool runActions) {
+    unit target;
+    if (!runActions) {
+        return true;
+    }
+    target = EventUnit();
+    if (UnitGroupHasUnit(arenaMyArmy, target) || UnitGroupHasUnit(arenaEnemyArmy, target)) {
+        UnitGroupRemove(arenaMyArmy, target);
+        UnitGroupRemove(arenaEnemyArmy, target);
+        ArenaRefreshStatus();
+        UnitRemove(target);
+    }
+    return true;
+}
+
+void ArenaInit () {
+    int slot;
+    int x;
+    int y;
+    trigger buttonTrigger;
+    trigger deathTrigger;
+    trigger speedTrigger;
+
+    arenaMyArmy = UnitGroupEmpty();
+    arenaEnemyArmy = UnitGroupEmpty();
+    arenaMySpawn = Point(9.0, 16.0);
+    arenaEnemySpawn = Point(23.0, 16.0);
+    arenaCurrentRace = 0;
+    arenaSpawnOwner = ARENA_PLAYER;
+    ArenaInitRoster();
+
+    // No melee initialization: no starting economy or automatic defeat rules.
+    libNtve_gf_SetAlliance(ARENA_PLAYER, ARENA_ENEMY, libNtve_ge_AllianceSetting_Enemy);
+    VisRevealArea(ARENA_PLAYER, RegionEntireMap(), 0.0, false);
+    CameraPan(ARENA_PLAYER, Point(16.0, 16.0), 0.0, 0.0, 10.0, false);
+
+    arenaDialog = DialogCreate(360, 452, c_anchorTopLeft, 14, 14, false);
+    ArenaLabel("INSTANT ARENA - SOLO v0.2", 20, 16, 320, 24);
+    slot = 0;
+    while (slot < 3) {
+        arenaRaceButtons[slot] = ArenaButton(arenaRaceNames[slot], 20 + slot * 108, 44, 104, 32);
+        slot += 1;
+    }
+    arenaMineButton = ArenaButton("Mine", 20, 84, 156, 30);
+    arenaEnemyButton = ArenaButton("Enemy", 184, 84, 156, 30);
+
+    slot = 0;
+    while (slot < ARENA_GRID_SLOTS) {
+        x = 20 + (slot % 5) * 65;
+        y = 126 + (slot / 5) * 65;
+        arenaUnitButtons[slot] = ArenaButton("", x, y, 60, 60);
+        arenaUnitImages[slot] = ArenaControl(c_triggerControlTypeImage, x + 5, y + 5, 50, 50);
+        libNtve_gf_SetDialogItemImageType(arenaUnitImages[slot], c_triggerImageTypeNormal, PlayerGroupSingle(ARENA_PLAYER));
+        // The icon draws above the button and lets mouse input reach it.
+        DialogControlSetPropertyAsBool(arenaUnitImages[slot], c_triggerControlPropertyAcceptMouseTarget,
+            PlayerGroupSingle(ARENA_PLAYER), false);
+        slot += 1;
+    }
+    arenaStatusLabel = ArenaLabel("", 20, 326, 320, 24);
+    arenaClearButton = ArenaButton("Clear My Army", 20, 352, 156, 32);
+    arenaResetButton = ArenaButton("Reset Arena", 184, 352, 156, 32);
+    arenaSpeedLabel = ArenaLabel("", 20, 390, 320, 24);
+    arenaSpeedSlider = ArenaControl(c_triggerControlTypeSlider, 20, 416, 320, 22);
+    libNtve_gf_SetDialogItemMinimumValue(arenaSpeedSlider, IntToFixed(c_gameSpeedSlower), PlayerGroupSingle(ARENA_PLAYER));
+    libNtve_gf_SetDialogItemMaximumValue(arenaSpeedSlider, IntToFixed(c_gameSpeedFaster), PlayerGroupSingle(ARENA_PLAYER));
+    libNtve_gf_SetDialogItemTooltip(arenaSpeedSlider,
+        StringToText("Change speed during play: Slower, Slow, Normal, Fast, Faster."), PlayerGroupSingle(ARENA_PLAYER));
+    GameSetSpeedValueMinimum(c_gameSpeedSlower);
+    GameSetSpeedLocked(false);
+    ArenaRefreshSpeed();
+    ArenaSelectOwner(ARENA_PLAYER);
+    ArenaRefreshStatus();
+    DialogSetVisible(arenaDialog, PlayerGroupSingle(ARENA_PLAYER), true);
+
+    buttonTrigger = TriggerCreate("ArenaButtonClicked");
+    TriggerAddEventDialogControl(buttonTrigger, ARENA_PLAYER, c_invalidDialogControlId, c_triggerControlEventTypeClick);
+    deathTrigger = TriggerCreate("ArenaUnitDied");
+    TriggerAddEventUnitDied(deathTrigger, null);
+    speedTrigger = TriggerCreate("ArenaSpeedChanged");
+    TriggerAddEventDialogControl(speedTrigger, ARENA_PLAYER, arenaSpeedSlider, c_triggerControlEventTypeValueChanged);
+}

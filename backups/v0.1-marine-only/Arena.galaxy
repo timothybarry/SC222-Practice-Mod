@@ -1,0 +1,156 @@
+// Instant Arena v0.1 - local solo prototype.
+// The build script embeds this code into the map's editable Custom Script element.
+
+const int ARENA_PLAYER = 1;
+const int ARENA_ENEMY = 15;
+const int ARENA_LIMIT = 100;
+
+unitgroup arenaMyArmy;
+unitgroup arenaEnemyArmy;
+point arenaMySpawn;
+point arenaEnemySpawn;
+int arenaDialog;
+int arenaSpawnButton;
+int arenaEnemyButton;
+int arenaClearButton;
+int arenaResetButton;
+int arenaStatusLabel;
+
+void ArenaRefreshStatus () {
+    string status;
+    status = "Yours: " + IntToString(UnitGroupCount(arenaMyArmy, c_unitCountAlive));
+    status = status + " / 100     Enemy: ";
+    status = status + IntToString(UnitGroupCount(arenaEnemyArmy, c_unitCountAlive)) + " / 100";
+    libNtve_gf_SetDialogItemText(arenaStatusLabel, StringToText(status), PlayerGroupSingle(ARENA_PLAYER));
+}
+
+int ArenaButton (string caption, int y) {
+    int control;
+    control = DialogControlCreate(arenaDialog, c_triggerControlTypeButton);
+    DialogControlSetSize(control, PlayerGroupSingle(ARENA_PLAYER), 260, 38);
+    DialogControlSetPosition(control, PlayerGroupSingle(ARENA_PLAYER), c_anchorTopLeft, 20, y);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+    return control;
+}
+
+void ArenaClearGroup (unitgroup army) {
+    unit target;
+    while (UnitGroupCount(army, c_unitCountAll) > 0) {
+        target = UnitGroupUnit(army, 1);
+        UnitGroupRemove(army, target);
+        UnitRemove(target);
+    }
+}
+
+void ArenaSpawn (int owner) {
+    unitgroup army;
+    point spawn;
+    fixed facing;
+    if (owner == ARENA_PLAYER) {
+        army = arenaMyArmy;
+        spawn = arenaMySpawn;
+        facing = 0.0;
+    }
+    else {
+        army = arenaEnemyArmy;
+        spawn = arenaEnemySpawn;
+        facing = 180.0;
+    }
+    if (UnitGroupCount(army, c_unitCountAlive) >= ARENA_LIMIT) {
+        UIDisplayMessage(PlayerGroupSingle(ARENA_PLAYER), c_messageAreaSubtitle,
+            StringToText("100 living units on this side. Clear an army or fight to make room."));
+        return;
+    }
+    UnitCreate(1, "Marine", 0, owner, spawn, facing);
+    // Normal placement lets SC2 find nearby space instead of stacking units.
+    if (UnitLastCreated() != null) {
+        UnitGroupAdd(army, UnitLastCreated());
+        if (owner == ARENA_ENEMY) {
+            UnitIssueOrder(UnitLastCreated(),
+                OrderTargetingPoint(AbilityCommand("attack", 0), arenaMySpawn), c_orderQueueReplace);
+        }
+    }
+    ArenaRefreshStatus();
+}
+
+bool ArenaButtonClicked (bool testConds, bool runActions) {
+    int control;
+    if (!runActions || EventPlayer() != ARENA_PLAYER) {
+        return true;
+    }
+    control = EventDialogControl();
+    if (control == arenaSpawnButton) {
+        ArenaSpawn(ARENA_PLAYER);
+    }
+    else if (control == arenaEnemyButton) {
+        ArenaSpawn(ARENA_ENEMY);
+    }
+    else if (control == arenaClearButton) {
+        ArenaClearGroup(arenaMyArmy);
+        ArenaRefreshStatus();
+    }
+    else if (control == arenaResetButton) {
+        ArenaClearGroup(arenaMyArmy);
+        ArenaClearGroup(arenaEnemyArmy);
+        ArenaRefreshStatus();
+    }
+    return true;
+}
+
+bool ArenaUnitDied (bool testConds, bool runActions) {
+    unit target;
+    if (!runActions) {
+        return true;
+    }
+    target = EventUnit();
+    if (UnitGroupHasUnit(arenaMyArmy, target) || UnitGroupHasUnit(arenaEnemyArmy, target)) {
+        UnitGroupRemove(arenaMyArmy, target);
+        UnitGroupRemove(arenaEnemyArmy, target);
+        ArenaRefreshStatus();
+        // Remove the dead unit handle so long sessions do not accumulate corpses.
+        UnitRemove(target);
+    }
+    return true;
+}
+
+void ArenaInit () {
+    int titleLabel;
+    int helpLabel;
+    trigger buttonTrigger;
+    trigger deathTrigger;
+
+    arenaMyArmy = UnitGroupEmpty();
+    arenaEnemyArmy = UnitGroupEmpty();
+    arenaMySpawn = Point(9.0, 16.0);
+    arenaEnemySpawn = Point(23.0, 16.0);
+
+    // Deliberately omit melee initialization: no starting economy or defeat rules.
+    libNtve_gf_SetAlliance(ARENA_PLAYER, ARENA_ENEMY, libNtve_ge_AllianceSetting_Enemy);
+    VisRevealArea(ARENA_PLAYER, RegionEntireMap(), 0.0, false);
+    CameraPan(ARENA_PLAYER, Point(16.0, 16.0), 0.0, 0.0, 10.0, false);
+
+    arenaDialog = DialogCreate(300, 294, c_anchorTopLeft, 14, 14, false);
+    titleLabel = DialogControlCreate(arenaDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(titleLabel, PlayerGroupSingle(ARENA_PLAYER), 260, 24);
+    DialogControlSetPosition(titleLabel, PlayerGroupSingle(ARENA_PLAYER), c_anchorTopLeft, 20, 16);
+    libNtve_gf_SetDialogItemText(titleLabel, StringToText("INSTANT ARENA - SOLO"), PlayerGroupSingle(ARENA_PLAYER));
+
+    arenaStatusLabel = DialogControlCreate(arenaDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(arenaStatusLabel, PlayerGroupSingle(ARENA_PLAYER), 260, 24);
+    DialogControlSetPosition(arenaStatusLabel, PlayerGroupSingle(ARENA_PLAYER), c_anchorTopLeft, 20, 42);
+    arenaSpawnButton = ArenaButton("Spawn My Marine", 72);
+    arenaEnemyButton = ArenaButton("Spawn Enemy Marine", 116);
+    arenaClearButton = ArenaButton("Clear My Army", 160);
+    arenaResetButton = ArenaButton("Reset Arena", 204);
+    helpLabel = DialogControlCreate(arenaDialog, c_triggerControlTypeLabel);
+    DialogControlSetSize(helpLabel, PlayerGroupSingle(ARENA_PLAYER), 260, 26);
+    DialogControlSetPosition(helpLabel, PlayerGroupSingle(ARENA_PLAYER), c_anchorTopLeft, 20, 254);
+    libNtve_gf_SetDialogItemText(helpLabel, StringToText("Select your Marines and attack-move."), PlayerGroupSingle(ARENA_PLAYER));
+    ArenaRefreshStatus();
+    DialogSetVisible(arenaDialog, PlayerGroupSingle(ARENA_PLAYER), true);
+
+    buttonTrigger = TriggerCreate("ArenaButtonClicked");
+    TriggerAddEventDialogControl(buttonTrigger, ARENA_PLAYER, c_invalidDialogControlId, c_triggerControlEventTypeClick);
+    deathTrigger = TriggerCreate("ArenaUnitDied");
+    TriggerAddEventUnitDied(deathTrigger, null);
+}

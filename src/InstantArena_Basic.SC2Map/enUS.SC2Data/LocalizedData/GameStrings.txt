@@ -1,0 +1,6 @@
+DocInfo/Name=Instant Arena - Basic Marine Arena
+DocInfo/DescShort=Instant Marine spawning and endless solo combat.
+DocInfo/DescLong=Spawn friendly or enemy Marines, clear your army, and reset the arena. This is the tested basic solo version.
+MapInfo/Player00/Name=Neutral
+MapInfo/Player01/Name=You
+MapInfo/Player15/Name=Enemy

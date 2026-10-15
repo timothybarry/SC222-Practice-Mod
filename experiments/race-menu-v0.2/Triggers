@@ -1,0 +1,482 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TriggerData>
+    <Root>
+        <Item Type="CustomScript" Id="A0000001" />
+        <Item Type="Trigger" Id="A0000002" />
+    </Root>
+    <Element Type="CustomScript" Id="A0000001">
+        <ScriptCode>
+// Instant Arena v0.2 - race menus, unit icons, and live game speed.
+// tools/build_map.py embeds this code and the roster in the editable map.
+
+const int ARENA_PLAYER = 1;
+const int ARENA_ENEMY = 15;
+const int ARENA_LIMIT = 100;
+const int ARENA_GRID_SLOTS = 15;
+
+unitgroup arenaMyArmy;
+unitgroup arenaEnemyArmy;
+point arenaMySpawn;
+point arenaEnemySpawn;
+int arenaDialog;
+int arenaRaceButtons[3];
+int arenaUnitButtons[ARENA_GRID_SLOTS];
+int arenaUnitImages[ARENA_GRID_SLOTS];
+int arenaVisibleUnits[ARENA_GRID_SLOTS];
+string arenaUnitTypes[64];
+string arenaUnitNames[64];
+string arenaUnitIcons[64];
+string arenaRaceNames[3];
+int arenaRaceFirstUnit[3];
+int arenaRaceUnitCounts[3];
+int arenaCurrentRace;
+int arenaSpawnOwner;
+int arenaMineButton;
+int arenaEnemyButton;
+int arenaClearButton;
+int arenaResetButton;
+int arenaStatusLabel;
+int arenaSpeedLabel;
+int arenaSpeedSlider;
+int arenaSpeedIndex;
+
+void ArenaInitRoster () {
+    arenaRaceNames[0] = "Terran";
+    arenaRaceFirstUnit[0] = 0;
+    arenaRaceUnitCounts[0] = 13;
+    arenaUnitTypes[0] = "SCV";
+    arenaUnitNames[0] = "SCV";
+    arenaUnitIcons[0] = "Assets\\Textures\\btn-unit-terran-scv.dds";
+    arenaUnitTypes[1] = "Marine";
+    arenaUnitNames[1] = "Marine";
+    arenaUnitIcons[1] = "Assets\\Textures\\btn-unit-terran-marine.dds";
+    arenaUnitTypes[2] = "Marauder";
+    arenaUnitNames[2] = "Marauder";
+    arenaUnitIcons[2] = "Assets\\Textures\\btn-unit-terran-marauder.dds";
+    arenaUnitTypes[3] = "Reaper";
+    arenaUnitNames[3] = "Reaper";
+    arenaUnitIcons[3] = "Assets\\Textures\\btn-unit-terran-reaper.dds";
+    arenaUnitTypes[4] = "Ghost";
+    arenaUnitNames[4] = "Ghost";
+    arenaUnitIcons[4] = "Assets\\Textures\\btn-unit-terran-ghost.dds";
+    arenaUnitTypes[5] = "Hellion";
+    arenaUnitNames[5] = "Hellion";
+    arenaUnitIcons[5] = "Assets\\Textures\\btn-unit-terran-hellion.dds";
+    arenaUnitTypes[6] = "SiegeTank";
+    arenaUnitNames[6] = "Siege Tank";
+    arenaUnitIcons[6] = "Assets\\Textures\\btn-unit-terran-siegetank.dds";
+    arenaUnitTypes[7] = "Thor";
+    arenaUnitNames[7] = "Thor";
+    arenaUnitIcons[7] = "Assets\\Textures\\btn-unit-terran-thor.dds";
+    arenaUnitTypes[8] = "VikingFighter";
+    arenaUnitNames[8] = "Viking (Fighter)";
+    arenaUnitIcons[8] = "Assets\\Textures\\btn-unit-terran-vikingfighter.dds";
+    arenaUnitTypes[9] = "Medivac";
+    arenaUnitNames[9] = "Medivac";
+    arenaUnitIcons[9] = "Assets\\Textures\\btn-unit-terran-medivac.dds";
+    arenaUnitTypes[10] = "Banshee";
+    arenaUnitNames[10] = "Banshee";
+    arenaUnitIcons[10] = "Assets\\Textures\\btn-unit-terran-banshee.dds";
+    arenaUnitTypes[11] = "Raven";
+    arenaUnitNames[11] = "Raven";
+    arenaUnitIcons[11] = "Assets\\Textures\\btn-unit-terran-raven.dds";
+    arenaUnitTypes[12] = "Battlecruiser";
+    arenaUnitNames[12] = "Battlecruiser";
+    arenaUnitIcons[12] = "Assets\\Textures\\btn-unit-terran-battlecruiser.dds";
+    arenaRaceNames[1] = "Protoss";
+    arenaRaceFirstUnit[1] = 13;
+    arenaRaceUnitCounts[1] = 13;
+    arenaUnitTypes[13] = "Probe";
+    arenaUnitNames[13] = "Probe";
+    arenaUnitIcons[13] = "Assets\\Textures\\btn-unit-protoss-probe.dds";
+    arenaUnitTypes[14] = "Zealot";
+    arenaUnitNames[14] = "Zealot";
+    arenaUnitIcons[14] = "Assets\\Textures\\btn-unit-protoss-zealot.dds";
+    arenaUnitTypes[15] = "Stalker";
+    arenaUnitNames[15] = "Stalker";
+    arenaUnitIcons[15] = "Assets\\Textures\\btn-unit-protoss-stalker.dds";
+    arenaUnitTypes[16] = "Sentry";
+    arenaUnitNames[16] = "Sentry";
+    arenaUnitIcons[16] = "Assets\\Textures\\btn-unit-protoss-sentry.dds";
+    arenaUnitTypes[17] = "HighTemplar";
+    arenaUnitNames[17] = "High Templar";
+    arenaUnitIcons[17] = "Assets\\Textures\\btn-unit-protoss-hightemplar.dds";
+    arenaUnitTypes[18] = "DarkTemplar";
+    arenaUnitNames[18] = "Dark Templar";
+    arenaUnitIcons[18] = "Assets\\Textures\\btn-unit-protoss-darktemplar.dds";
+    arenaUnitTypes[19] = "Archon";
+    arenaUnitNames[19] = "Archon";
+    arenaUnitIcons[19] = "Assets\\Textures\\btn-unit-protoss-archon.dds";
+    arenaUnitTypes[20] = "Immortal";
+    arenaUnitNames[20] = "Immortal";
+    arenaUnitIcons[20] = "Assets\\Textures\\BTN-Unit-Protoss-Immortal.dds";
+    arenaUnitTypes[21] = "Colossus";
+    arenaUnitNames[21] = "Colossus";
+    arenaUnitIcons[21] = "Assets\\Textures\\btn-unit-protoss-colossus.dds";
+    arenaUnitTypes[22] = "Phoenix";
+    arenaUnitNames[22] = "Phoenix";
+    arenaUnitIcons[22] = "Assets\\Textures\\btn-unit-protoss-phoenix.dds";
+    arenaUnitTypes[23] = "VoidRay";
+    arenaUnitNames[23] = "Void Ray";
+    arenaUnitIcons[23] = "Assets\\Textures\\btn-unit-protoss-warpray.dds";
+    arenaUnitTypes[24] = "Carrier";
+    arenaUnitNames[24] = "Carrier";
+    arenaUnitIcons[24] = "Assets\\Textures\\btn-unit-protoss-carrier.dds";
+    arenaUnitTypes[25] = "Mothership";
+    arenaUnitNames[25] = "Mothership";
+    arenaUnitIcons[25] = "Assets\\Textures\\btn-unit-protoss-mothership.dds";
+    arenaRaceNames[2] = "Zerg";
+    arenaRaceFirstUnit[2] = 26;
+    arenaRaceUnitCounts[2] = 13;
+    arenaUnitTypes[26] = "Drone";
+    arenaUnitNames[26] = "Drone";
+    arenaUnitIcons[26] = "Assets\\Textures\\btn-unit-zerg-drone.dds";
+    arenaUnitTypes[27] = "Zergling";
+    arenaUnitNames[27] = "Zergling";
+    arenaUnitIcons[27] = "Assets\\Textures\\btn-unit-zerg-zergling.dds";
+    arenaUnitTypes[28] = "Baneling";
+    arenaUnitNames[28] = "Baneling";
+    arenaUnitIcons[28] = "Assets\\Textures\\btn-unit-zerg-baneling.dds";
+    arenaUnitTypes[29] = "Roach";
+    arenaUnitNames[29] = "Roach";
+    arenaUnitIcons[29] = "Assets\\Textures\\btn-unit-zerg-roach.dds";
+    arenaUnitTypes[30] = "Hydralisk";
+    arenaUnitNames[30] = "Hydralisk";
+    arenaUnitIcons[30] = "Assets\\Textures\\btn-unit-zerg-hydralisk.dds";
+    arenaUnitTypes[31] = "Infestor";
+    arenaUnitNames[31] = "Infestor";
+    arenaUnitIcons[31] = "Assets\\Textures\\btn-unit-zerg-infestor.dds";
+    arenaUnitTypes[32] = "Queen";
+    arenaUnitNames[32] = "Queen";
+    arenaUnitIcons[32] = "Assets\\Textures\\btn-unit-zerg-queen.dds";
+    arenaUnitTypes[33] = "Ultralisk";
+    arenaUnitNames[33] = "Ultralisk";
+    arenaUnitIcons[33] = "Assets\\Textures\\btn-unit-zerg-omegalisk.dds";
+    arenaUnitTypes[34] = "Overlord";
+    arenaUnitNames[34] = "Overlord";
+    arenaUnitIcons[34] = "Assets\\Textures\\btn-unit-zerg-overlord.dds";
+    arenaUnitTypes[35] = "Overseer";
+    arenaUnitNames[35] = "Overseer";
+    arenaUnitIcons[35] = "Assets\\Textures\\btn-unit-zerg-overseer.dds";
+    arenaUnitTypes[36] = "Mutalisk";
+    arenaUnitNames[36] = "Mutalisk";
+    arenaUnitIcons[36] = "Assets\\Textures\\btn-unit-zerg-mutalisk.dds";
+    arenaUnitTypes[37] = "Corruptor";
+    arenaUnitNames[37] = "Corruptor";
+    arenaUnitIcons[37] = "Assets\\Textures\\btn-unit-zerg-corruptor.dds";
+    arenaUnitTypes[38] = "BroodLord";
+    arenaUnitNames[38] = "Brood Lord";
+    arenaUnitIcons[38] = "Assets\\Textures\\btn-unit-zerg-mantalisk.dds";
+}
+
+int ArenaControl (int type, int x, int y, int width, int height) {
+    int control;
+    control = DialogControlCreate(arenaDialog, type);
+    DialogControlSetSize(control, PlayerGroupSingle(ARENA_PLAYER), width, height);
+    DialogControlSetPosition(control, PlayerGroupSingle(ARENA_PLAYER), c_anchorTopLeft, x, y);
+    return control;
+}
+
+int ArenaLabel (string caption, int x, int y, int width, int height) {
+    int control;
+    control = ArenaControl(c_triggerControlTypeLabel, x, y, width, height);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+    return control;
+}
+
+int ArenaButton (string caption, int x, int y, int width, int height) {
+    int control;
+    control = ArenaControl(c_triggerControlTypeButton, x, y, width, height);
+    libNtve_gf_SetDialogItemText(control, StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+    return control;
+}
+
+void ArenaRefreshStatus () {
+    string status;
+    status = "Mine: " + IntToString(UnitGroupCount(arenaMyArmy, c_unitCountAlive));
+    status = status + " / " + IntToString(ARENA_LIMIT) + "    Enemy: ";
+    status = status + IntToString(UnitGroupCount(arenaEnemyArmy, c_unitCountAlive));
+    status = status + " / " + IntToString(ARENA_LIMIT);
+    libNtve_gf_SetDialogItemText(arenaStatusLabel, StringToText(status), PlayerGroupSingle(ARENA_PLAYER));
+}
+
+void ArenaSelectRace (int race) {
+    int slot;
+    int index;
+    string caption;
+    string tooltip;
+    arenaCurrentRace = race;
+    slot = 0;
+    while (slot &lt; 3) {
+        caption = arenaRaceNames[slot];
+        if (slot == race) {
+            caption = "[ " + caption + " ]";
+        }
+        libNtve_gf_SetDialogItemText(arenaRaceButtons[slot], StringToText(caption), PlayerGroupSingle(ARENA_PLAYER));
+        slot += 1;
+    }
+    slot = 0;
+    while (slot &lt; ARENA_GRID_SLOTS) {
+        if (slot &lt; arenaRaceUnitCounts[race]) {
+            index = arenaRaceFirstUnit[race] + slot;
+            arenaVisibleUnits[slot] = index;
+            libNtve_gf_SetDialogItemImage(arenaUnitImages[slot], arenaUnitIcons[index], PlayerGroupSingle(ARENA_PLAYER));
+            tooltip = arenaUnitNames[index] + "\nClick to instantly spawn for ";
+            if (arenaSpawnOwner == ARENA_PLAYER) {
+                tooltip = tooltip + "your army.";
+            }
+            else {
+                tooltip = tooltip + "the enemy army.";
+            }
+            libNtve_gf_SetDialogItemTooltip(arenaUnitButtons[slot], StringToText(tooltip), PlayerGroupSingle(ARENA_PLAYER));
+            DialogControlSetVisible(arenaUnitButtons[slot], PlayerGroupSingle(ARENA_PLAYER), true);
+            DialogControlSetVisible(arenaUnitImages[slot], PlayerGroupSingle(ARENA_PLAYER), true);
+        }
+        else {
+            arenaVisibleUnits[slot] = -1;
+            DialogControlSetVisible(arenaUnitButtons[slot], PlayerGroupSingle(ARENA_PLAYER), false);
+            DialogControlSetVisible(arenaUnitImages[slot], PlayerGroupSingle(ARENA_PLAYER), false);
+        }
+        slot += 1;
+    }
+}
+
+void ArenaSelectOwner (int owner) {
+    arenaSpawnOwner = owner;
+    if (owner == ARENA_PLAYER) {
+        libNtve_gf_SetDialogItemText(arenaMineButton, StringToText("[ Mine ]"), PlayerGroupSingle(ARENA_PLAYER));
+        libNtve_gf_SetDialogItemText(arenaEnemyButton, StringToText("Enemy"), PlayerGroupSingle(ARENA_PLAYER));
+    }
+    else {
+        libNtve_gf_SetDialogItemText(arenaMineButton, StringToText("Mine"), PlayerGroupSingle(ARENA_PLAYER));
+        libNtve_gf_SetDialogItemText(arenaEnemyButton, StringToText("[ Enemy ]"), PlayerGroupSingle(ARENA_PLAYER));
+    }
+    ArenaSelectRace(arenaCurrentRace);
+}
+
+void ArenaClearGroup (unitgroup army) {
+    unit target;
+    while (UnitGroupCount(army, c_unitCountAll) &gt; 0) {
+        target = UnitGroupUnit(army, 1);
+        UnitGroupRemove(army, target);
+        UnitRemove(target);
+    }
+}
+
+void ArenaSpawn (int owner, string unitType) {
+    unitgroup army;
+    unitgroup created;
+    unit spawned;
+    point spawn;
+    fixed facing;
+    if (owner == ARENA_PLAYER) {
+        army = arenaMyArmy;
+        spawn = arenaMySpawn;
+        facing = 0.0;
+    }
+    else {
+        army = arenaEnemyArmy;
+        spawn = arenaEnemySpawn;
+        facing = 180.0;
+    }
+    if (UnitGroupCount(army, c_unitCountAlive) &gt;= ARENA_LIMIT) {
+        UIDisplayMessage(PlayerGroupSingle(ARENA_PLAYER), c_messageAreaSubtitle,
+            StringToText(IntToString(ARENA_LIMIT) + " living units on this side. Clear an army or fight to make room."));
+        return;
+    }
+    created = UnitCreate(1, unitType, 0, owner, spawn, facing);
+    spawned = UnitGroupUnit(created, 1);
+    if (spawned != null) {
+        UnitGroupAdd(army, spawned);
+        if (owner == ARENA_ENEMY) {
+            if (UnitAbilityExists(spawned, "attack")) {
+                UnitIssueOrder(spawned,
+                    OrderTargetingPoint(AbilityCommand("attack", 0), arenaMySpawn), c_orderQueueReplace);
+            }
+            else if (UnitAbilityExists(spawned, "move")) {
+                UnitIssueOrder(spawned,
+                    OrderTargetingPoint(AbilityCommand("move", 0), arenaMySpawn), c_orderQueueReplace);
+            }
+        }
+    }
+    else {
+        UIDisplayMessage(PlayerGroupSingle(ARENA_PLAYER), c_messageAreaSubtitle,
+            StringToText("No room at the spawn point. Move units away or clear an army."));
+    }
+    ArenaRefreshStatus();
+}
+
+string ArenaSpeedName (int speed) {
+    if (speed == c_gameSpeedSlower) { return "Slower"; }
+    if (speed == c_gameSpeedSlow) { return "Slow"; }
+    if (speed == c_gameSpeedNormal) { return "Normal"; }
+    if (speed == c_gameSpeedFast) { return "Fast"; }
+    return "Faster";
+}
+
+void ArenaRefreshSpeed () {
+    arenaSpeedIndex = GameGetSpeedValue();
+    libNtve_gf_SetDialogItemCurrentValue(arenaSpeedSlider, IntToFixed(arenaSpeedIndex), PlayerGroupSingle(ARENA_PLAYER));
+    libNtve_gf_SetDialogItemText(arenaSpeedLabel,
+        StringToText("Game speed: " + ArenaSpeedName(arenaSpeedIndex)), PlayerGroupSingle(ARENA_PLAYER));
+}
+
+bool ArenaSpeedChanged (bool testConds, bool runActions) {
+    int speed;
+    if (!runActions || EventPlayer() != ARENA_PLAYER) {
+        return true;
+    }
+    speed = FixedToInt(libNtve_gf_DialogItemValue(arenaSpeedSlider, ARENA_PLAYER) + 0.5);
+    if (speed &lt; c_gameSpeedSlower) { speed = c_gameSpeedSlower; }
+    if (speed &gt; c_gameSpeedFaster) { speed = c_gameSpeedFaster; }
+    if (speed != arenaSpeedIndex) {
+        GameSetSpeedValue(speed);
+        ArenaRefreshSpeed();
+    }
+    return true;
+}
+
+bool ArenaButtonClicked (bool testConds, bool runActions) {
+    int control;
+    int slot;
+    int index;
+    if (!runActions || EventPlayer() != ARENA_PLAYER) {
+        return true;
+    }
+    control = EventDialogControl();
+    if (control == arenaMineButton) {
+        ArenaSelectOwner(ARENA_PLAYER);
+        return true;
+    }
+    if (control == arenaEnemyButton) {
+        ArenaSelectOwner(ARENA_ENEMY);
+        return true;
+    }
+    if (control == arenaClearButton) {
+        ArenaClearGroup(arenaMyArmy);
+        ArenaRefreshStatus();
+        return true;
+    }
+    if (control == arenaResetButton) {
+        ArenaClearGroup(arenaMyArmy);
+        ArenaClearGroup(arenaEnemyArmy);
+        ArenaRefreshStatus();
+        return true;
+    }
+    slot = 0;
+    while (slot &lt; 3) {
+        if (control == arenaRaceButtons[slot]) {
+            ArenaSelectRace(slot);
+            return true;
+        }
+        slot += 1;
+    }
+    slot = 0;
+    while (slot &lt; ARENA_GRID_SLOTS) {
+        if (control == arenaUnitButtons[slot]) {
+            index = arenaVisibleUnits[slot];
+            if (index &gt;= 0) {
+                ArenaSpawn(arenaSpawnOwner, arenaUnitTypes[index]);
+            }
+            return true;
+        }
+        slot += 1;
+    }
+    return true;
+}
+
+bool ArenaUnitDied (bool testConds, bool runActions) {
+    unit target;
+    if (!runActions) {
+        return true;
+    }
+    target = EventUnit();
+    if (UnitGroupHasUnit(arenaMyArmy, target) || UnitGroupHasUnit(arenaEnemyArmy, target)) {
+        UnitGroupRemove(arenaMyArmy, target);
+        UnitGroupRemove(arenaEnemyArmy, target);
+        ArenaRefreshStatus();
+        UnitRemove(target);
+    }
+    return true;
+}
+
+void ArenaInit () {
+    int slot;
+    int x;
+    int y;
+    trigger buttonTrigger;
+    trigger deathTrigger;
+    trigger speedTrigger;
+
+    arenaMyArmy = UnitGroupEmpty();
+    arenaEnemyArmy = UnitGroupEmpty();
+    arenaMySpawn = Point(9.0, 16.0);
+    arenaEnemySpawn = Point(23.0, 16.0);
+    arenaCurrentRace = 0;
+    arenaSpawnOwner = ARENA_PLAYER;
+    ArenaInitRoster();
+
+    // No melee initialization: no starting economy or automatic defeat rules.
+    libNtve_gf_SetAlliance(ARENA_PLAYER, ARENA_ENEMY, libNtve_ge_AllianceSetting_Enemy);
+    VisRevealArea(ARENA_PLAYER, RegionEntireMap(), 0.0, false);
+    CameraPan(ARENA_PLAYER, Point(16.0, 16.0), 0.0, 0.0, 10.0, false);
+
+    arenaDialog = DialogCreate(360, 452, c_anchorTopLeft, 14, 14, false);
+    ArenaLabel("INSTANT ARENA - SOLO v0.2", 20, 16, 320, 24);
+    slot = 0;
+    while (slot &lt; 3) {
+        arenaRaceButtons[slot] = ArenaButton(arenaRaceNames[slot], 20 + slot * 108, 44, 104, 32);
+        slot += 1;
+    }
+    arenaMineButton = ArenaButton("Mine", 20, 84, 156, 30);
+    arenaEnemyButton = ArenaButton("Enemy", 184, 84, 156, 30);
+
+    slot = 0;
+    while (slot &lt; ARENA_GRID_SLOTS) {
+        x = 20 + (slot % 5) * 65;
+        y = 126 + (slot / 5) * 65;
+        arenaUnitButtons[slot] = ArenaButton("", x, y, 60, 60);
+        arenaUnitImages[slot] = ArenaControl(c_triggerControlTypeImage, x + 5, y + 5, 50, 50);
+        libNtve_gf_SetDialogItemImageType(arenaUnitImages[slot], c_triggerImageTypeNormal, PlayerGroupSingle(ARENA_PLAYER));
+        // The icon draws above the button and lets mouse input reach it.
+        DialogControlSetPropertyAsBool(arenaUnitImages[slot], c_triggerControlPropertyAcceptMouseTarget,
+            PlayerGroupSingle(ARENA_PLAYER), false);
+        slot += 1;
+    }
+    arenaStatusLabel = ArenaLabel("", 20, 326, 320, 24);
+    arenaClearButton = ArenaButton("Clear My Army", 20, 352, 156, 32);
+    arenaResetButton = ArenaButton("Reset Arena", 184, 352, 156, 32);
+    arenaSpeedLabel = ArenaLabel("", 20, 390, 320, 24);
+    arenaSpeedSlider = ArenaControl(c_triggerControlTypeSlider, 20, 416, 320, 22);
+    libNtve_gf_SetDialogItemMinimumValue(arenaSpeedSlider, IntToFixed(c_gameSpeedSlower), PlayerGroupSingle(ARENA_PLAYER));
+    libNtve_gf_SetDialogItemMaximumValue(arenaSpeedSlider, IntToFixed(c_gameSpeedFaster), PlayerGroupSingle(ARENA_PLAYER));
+    libNtve_gf_SetDialogItemTooltip(arenaSpeedSlider,
+        StringToText("Change speed during play: Slower, Slow, Normal, Fast, Faster."), PlayerGroupSingle(ARENA_PLAYER));
+    GameSetSpeedValueMinimum(c_gameSpeedSlower);
+    GameSetSpeedLocked(false);
+    ArenaRefreshSpeed();
+    ArenaSelectOwner(ARENA_PLAYER);
+    ArenaRefreshStatus();
+    DialogSetVisible(arenaDialog, PlayerGroupSingle(ARENA_PLAYER), true);
+
+    buttonTrigger = TriggerCreate("ArenaButtonClicked");
+    TriggerAddEventDialogControl(buttonTrigger, ARENA_PLAYER, c_invalidDialogControlId, c_triggerControlEventTypeClick);
+    deathTrigger = TriggerCreate("ArenaUnitDied");
+    TriggerAddEventUnitDied(deathTrigger, null);
+    speedTrigger = TriggerCreate("ArenaSpeedChanged");
+    TriggerAddEventDialogControl(speedTrigger, ARENA_PLAYER, arenaSpeedSlider, c_triggerControlEventTypeValueChanged);
+}
+</ScriptCode>
+    </Element>
+    <Element Type="Trigger" Id="A0000002">
+        <Event Type="FunctionCall" Id="A0000003" />
+        <Action Type="FunctionCall" Id="A0000004" />
+    </Element>
+    <Element Type="FunctionCall" Id="A0000003">
+        <FunctionDef Type="FunctionDef" Library="Ntve" Id="00000120" />
+    </Element>
+    <Element Type="FunctionCall" Id="A0000004">
+        <FunctionDef Type="FunctionDef" Library="Ntve" Id="00000123" />
+        <ScriptCode>ArenaInit();</ScriptCode>
+    </Element>
+</TriggerData>
